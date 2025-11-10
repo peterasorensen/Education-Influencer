@@ -61,7 +61,6 @@ temp/
 *.mp3
 *.wav
 *.srt
-*.txt
 media/
 
 # Logs
