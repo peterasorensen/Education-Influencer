@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies including build tools
+# Install system dependencies including build tools and LaTeX
 RUN apt-get update && apt-get install -y \
     build-essential \
     gcc \
@@ -12,6 +12,10 @@ RUN apt-get update && apt-get install -y \
     libpango1.0-dev \
     pkg-config \
     python3-dev \
+    texlive \
+    texlive-latex-extra \
+    texlive-fonts-extra \
+    texlive-science \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
