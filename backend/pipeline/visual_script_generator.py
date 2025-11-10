@@ -65,20 +65,59 @@ class VisualScriptGenerator:
 
             system_prompt = """Design visual instructions for an educational animation using Manim.
 
-Rules:
-- Show don't tell - minimal text, maximum visuals
-- Use 3D objects, diagrams, shapes to demonstrate concepts
-- Build cumulatively - keep adding to the scene
-- Use transformations to show change
+For math/equations:
+- Always include the mathematical notation being discussed
+- Show step-by-step transformations of equations
+- If helpful, use visual models (fraction bars, number lines, grids) to represent operations
+- Highlight the parts being manipulated
 
-Return JSON with "visual_instructions" array."""
+For science:
+- Draw the actual structures/objects being discussed (molecules, cells, atoms, planets)
+- Label important parts
+- Show processes with arrows and transformations
+
+SPATIAL MANAGEMENT (CRITICAL):
+- Use different screen positions: UP, DOWN, LEFT, RIGHT, TOP, BOTTOM
+- Move old objects out of the way: shift them UP/LEFT, fade opacity, or scale down
+- Position new content where there's space
+- For titles/equations at top: keep them small or move them aside when drawing below
+- For step-by-step: arrange vertically or horizontally with clear spacing
+
+Return JSON with "instructions" key containing array of objects. Each object must have:
+- "narration": the text being spoken
+- "visual_type": equation, fraction_model, diagram, molecular_structure, etc. (be specific)
+- "description": EXACTLY what to draw AND where to position it (UP, DOWN, LEFT, RIGHT, center, etc.)
+- "manim_elements": MathTex for equations, specific shapes for models
+- "builds_on": how this adds to previous visual without covering it
+- "positioning": explicit positioning instructions to avoid overlaps
+
+Example for "Let's multiply one half by two thirds":
+{"instructions": [{
+  "narration": "Let's multiply one half by two thirds",
+  "visual_type": "equation",
+  "description": "Write the equation 1/2 × 2/3 using MathTex at the top of screen",
+  "manim_elements": ["MathTex for the multiplication expression"],
+  "builds_on": "Starting point for the problem",
+  "positioning": "Place at TOP, leaving center area free for visual model"
+}]}"""
 
             user_prompt = f"""Topic: {topic}
 
-Script:
+Timestamped script:
 {script_text}
 
-Design visuals for this script."""
+For EACH line of narration, analyze what concept is being explained and design the appropriate visual:
+
+MATH EXAMPLES:
+- "multiply 1/2 by 3/4" → Show MathTex equation "1/2 × 3/4", then draw TWO fraction bars: one split in 2 parts (shade 1), one split in 4 parts (shade 3)
+- "what is 25% of 80" → Show MathTex "25% × 80", draw a bar representing 100, divide it into 4 parts (25% each), show 80 inside
+- "solve x + 5 = 12" → Show the equation, then show step-by-step: subtract 5 from both sides, show x = 7
+
+SCIENCE EXAMPLES:
+- "photosynthesis uses CO2 and water" → Draw the chemical equation, then draw representations of CO2 molecules (C with two Os) and H2O molecules
+- "the earth orbits the sun" → Draw a large yellow sphere (sun) in center, smaller blue sphere (earth) moving in elliptical path around it
+
+Design visuals that DIRECTLY illustrate the specific concept being discussed in that narration line."""
 
             logger.info(f"Generating visual instructions for topic: {topic}")
 
@@ -93,27 +132,36 @@ Design visuals for this script."""
             )
 
             content = response.choices[0].message.content
-            logger.debug(f"Visual instructions response: {content[:500]}...")
+            logger.info(f"Visual instructions response (first 500 chars): {content[:500]}")
 
             parsed = json.loads(content)
+            logger.info(f"Parsed JSON keys: {list(parsed.keys()) if isinstance(parsed, dict) else 'not a dict'}")
 
-            # Extract visual instructions
-            if "visual_instructions" in parsed:
-                instructions = parsed["visual_instructions"]
-            elif "instructions" in parsed:
-                instructions = parsed["instructions"]
-            elif "scenes" in parsed:
-                instructions = parsed["scenes"]
-            elif isinstance(parsed, list):
+            # Extract visual instructions with flexible key matching
+            instructions = None
+
+            if isinstance(parsed, list):
                 instructions = parsed
-            else:
-                # Try to find the first list in the response
-                for value in parsed.values():
-                    if isinstance(value, list):
-                        instructions = value
+            elif isinstance(parsed, dict):
+                # Try common keys
+                for key in ["visual_instructions", "instructions", "scenes", "visuals", "segments", "timeline"]:
+                    if key in parsed:
+                        instructions = parsed[key]
+                        logger.info(f"Found instructions under key: {key}")
                         break
-                else:
-                    raise ValueError("Could not find visual instructions in response")
+
+                # If still not found, try to find ANY list in the response
+                if instructions is None:
+                    for key, value in parsed.items():
+                        if isinstance(value, list) and len(value) > 0:
+                            instructions = value
+                            logger.info(f"Found instructions list under key: {key}")
+                            break
+
+            if instructions is None or not isinstance(instructions, list):
+                logger.error(f"Failed to extract instructions. Full response: {content}")
+                logger.error(f"Parsed structure: {json.dumps(parsed, indent=2)[:1000]}")
+                raise ValueError(f"Could not find visual instructions array in response. Keys found: {list(parsed.keys()) if isinstance(parsed, dict) else 'not a dict'}")
 
             # Validate and enrich instructions
             validated_instructions = self._validate_instructions(
@@ -178,23 +226,26 @@ Design visuals for this script."""
             validated_instruction = {
                 "id": idx,
                 "narration": instruction.get("narration", ""),
-                "visual_type": instruction.get("visual_type", "text"),
+                "visual_type": instruction.get("visual_type", "diagram"),
                 "description": instruction.get("description", ""),
                 "manim_elements": instruction.get("manim_elements", []),
-                "transitions": instruction.get("transitions", ["FadeIn", "FadeOut"]),
+                "builds_on": instruction.get("builds_on", ""),
             }
 
-            # Add timestamp if available
+            # Add timestamp - CRITICAL for syncing
             if aligned_timestamps and idx < len(aligned_timestamps):
                 segment = aligned_timestamps[idx]
                 validated_instruction["timestamp"] = {
-                    "start": segment.get("start", idx * 3),
-                    "end": segment.get("end", (idx + 1) * 3),
+                    "start": segment.get("start", 0.0),
+                    "end": segment.get("end", 0.0),
                 }
+                # Use actual narration text from aligned timestamps
+                if not validated_instruction["narration"]:
+                    validated_instruction["narration"] = segment.get("text", "")
             elif "timestamp" in instruction:
                 validated_instruction["timestamp"] = instruction["timestamp"]
             else:
-                # Estimate timing
+                # Estimate timing if no timestamps available
                 estimated_start = idx * 3
                 estimated_end = (idx + 1) * 3
                 validated_instruction["timestamp"] = {

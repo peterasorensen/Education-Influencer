@@ -49,7 +49,11 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=[
+        "http://localhost:5173",
+        "https://yourdomain.com",  # Replace with your Vercel domain
+        "https://*.vercel.app",  # Allow Vercel preview deployments
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -633,11 +637,14 @@ if __name__ == "__main__":
 
     logger.info(f"Starting Educational Video Generation API on port {port}")
 
+    import os
+    is_production = os.getenv("ENVIRONMENT") == "production"
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=port,
-        reload=True,
-        reload_excludes=["output/*", "temp/*", "*.mp4", "*.mp3", "*.wav"],
+        reload=not is_production,
+        reload_dirs=["pipeline"] if not is_production else None,
         log_level="info",
     )

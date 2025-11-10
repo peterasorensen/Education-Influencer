@@ -129,24 +129,123 @@ class ManimGenerator:
         """Generate initial Manim code from visual instructions."""
         system_prompt = """Generate Manim code for an educational animation.
 
-Key points:
-- Minimize text, maximize visuals
-- Use 3D objects and diagrams
-- Build cumulatively (keep things on screen)
-- Use ThreeDScene for 3D
-- Use self.wait() to control timing - total animation should match target duration
+CRITICAL TIMING REQUIREMENTS:
+Track elapsed time properly:
+```python
+elapsed_time = 0  # Track total elapsed time
+
+# For each timestamped instruction:
+target_start = instruction["timestamp"]["start"]
+wait_time = target_start - elapsed_time
+if wait_time > 0:
+    self.wait(wait_time)
+    elapsed_time = target_start
+
+# Play animation with run_time to control duration
+duration = instruction["timestamp"]["end"] - instruction["timestamp"]["start"]
+self.play(Animation, run_time=duration)
+elapsed_time += duration
+```
+
+CRITICAL - FORBIDDEN/DEPRECATED (DO NOT USE):
+- ShowCreation (use Create instead)
+- GrowArrow (use Create or FadeIn instead)
+- Surface.set_fill_by_value (use basic set_fill instead)
+- ParametricSurface without proper setup (stick to basic shapes)
+- ThreeDScene.set_camera_orientation with complex configs (use simple angles only)
+- SVGMobject or any external file references (SVG, PNG, images) - NEVER use these
+- ImageMobject - NEVER use external images
+- ONLY use shapes you can create with code (Circle, Square, Polygon, etc.)
+
+SAFE VISUAL TECHNIQUES:
+1. Basic shapes: Circle, Square, Rectangle, Triangle, Line, Arc, Polygon
+2. Text/Math: Text("..."), MathTex(r"...")
+3. Grouping: VGroup(obj1, obj2, obj3)
+4. Colors: .set_color(RED), .set_fill(BLUE, opacity=0.5)
+5. Positioning: .move_to(UP), .next_to(other, RIGHT), .shift(LEFT * 2)
+6. Basic animations: Create, FadeIn, FadeOut, Write, Transform, ReplacementTransform
+7. Movement: obj.animate.shift(RIGHT), obj.animate.rotate(PI/4)
+
+VISUAL SOPHISTICATION (use these safely):
+- Compound shapes with VGroup: VGroup(Circle(), Square()).arrange(RIGHT)
+- Layering: Create multiple objects at same position with different colors/sizes
+- Gradients: .set_color_by_gradient(BLUE, PURPLE)
+- Highlights: Indicate(obj), Flash(obj), Wiggle(obj)
+- 3D basics: Cube(), Sphere(), Prism() with simple .rotate() and .shift()
+- Arrows: Arrow(start, end), CurvedArrow(start, end)
+
+CRITICAL - TEXT/MATH RENDERING:
+- For equations/math: ALWAYS use MathTex(r"...") with raw strings
+- For chemical formulas: Use MathTex(r"H_2O") NOT Tex("H_2O")
+- For plain text: Use Text("...") NOT Tex
+- MathTex handles LaTeX math mode automatically
+- Example: MathTex(r"E = mc^2"), MathTex(r"6CO_2 + 6H_2O")
 
 Return ONLY Python code."""
 
-        instructions_json = json.dumps(visual_instructions, indent=2)
+        # Format instructions with clear timestamp information
+        instructions_with_timing = []
+        for inst in visual_instructions:
+            timing_info = {
+                "timestamp": inst.get("timestamp", {}),
+                "narration": inst.get("narration", ""),
+                "visual_type": inst.get("visual_type", ""),
+                "description": inst.get("description", ""),
+                "manim_elements": inst.get("manim_elements", []),
+                "builds_on": inst.get("builds_on", ""),
+            }
+            instructions_with_timing.append(timing_info)
+
+        instructions_json = json.dumps(instructions_with_timing, indent=2)
 
         user_prompt = f"""Topic: {topic}
-Target duration: {target_duration} seconds
+Total duration: {target_duration} seconds
 
-Instructions:
+Timestamped visual instructions:
 {instructions_json}
 
-Generate code. Use self.wait() to make animation last {target_duration} seconds total. Class name: EducationalScene"""
+CRITICAL: Follow the visual instructions EXACTLY.
+- If instruction says "draw fraction 1/2" → draw MathTex(r"\\frac{{1}}{{2}}")
+- If instruction says "draw fraction bar divided in half" → draw Rectangle divided by a Line
+- If instruction says "show multiplication 2×3" → draw MathTex(r"2 \\times 3")
+- If instruction says "draw water molecule" → draw circles for H and O atoms with labels
+- Read the "description" field and implement EXACTLY what it says
+
+SPATIAL POSITIONING (CRITICAL - KEEP EVERYTHING ON SCREEN):
+- DEFAULT MANIM COORDINATES: Origin (0,0,0) is CENTER of screen
+- Screen boundaries: approximately -7 to +7 horizontal, -4 to +4 vertical
+- NEVER position objects beyond these bounds or they'll be off-screen
+- WARNING: Objects positioned at DOWN*3 or DOWN*4 will likely be cut off at bottom!
+- Follow "positioning" field instructions (TOP, UP, DOWN, LEFT, RIGHT, center)
+- Safe positioning methods:
+  * .to_edge(UP) - moves to top edge with padding (SAFE)
+  * .to_edge(DOWN) - moves to bottom edge with padding (SAFE)
+  * .to_corner(UL) - upper left corner with padding (SAFE)
+  * .shift(UP) or .shift(UP*2) - move upward (SAFE)
+  * .shift(DOWN) - small move down (SAFE)
+  * .shift(DOWN*2) - medium move down (CHECK if too low!)
+  * .next_to(other, DOWN, buff=0.5) - position below with spacing
+- Layout strategy for multiple objects:
+  * Top area: .to_edge(UP) or UP*2 for titles/equations
+  * Center: ORIGIN or UP*0.5 or DOWN*0.5 for main content
+  * Bottom area: DOWN or DOWN*1.5 MAX (don't go lower!)
+  * Use .arrange(DOWN, buff=0.5) to auto-space vertically with safe spacing
+- When new objects are added, make sure old ones don't cover them:
+  * Move old objects: obj.animate.shift(UP*2) or obj.animate.shift(LEFT*3)
+  * Fade old objects: obj.animate.set_opacity(0.3)
+  * Scale down old objects: obj.animate.scale(0.5)
+- Keep titles/equations small: .scale(0.7) or .scale(0.8)
+- Example: VGroup(title, content, footer).arrange(DOWN, buff=0.8).move_to(ORIGIN)
+
+Generate code with:
+1. elapsed_time variable to track current time
+2. Calculate wait_time = timestamp["start"] - elapsed_time before each animation
+3. Use run_time parameter in self.play() for precise duration control
+4. Follow visual_type and description fields precisely - don't improvise
+5. Build on previous objects as described in "builds_on" field
+6. Position objects according to "positioning" field to avoid overlaps
+
+Class name: EducationalScene"""
 
         logger.info("Generating initial Manim code")
 
@@ -175,7 +274,22 @@ Generate code. Use self.wait() to make animation last {target_duration} seconds 
         topic: str,
     ) -> str:
         """Fix Manim code based on error feedback."""
-        system_prompt = """Fix this Manim code based on the error. Return ONLY fixed code."""
+        system_prompt = """Fix this Manim code based on the error. Return ONLY fixed code.
+
+COMMON FIXES:
+- NameError 'ShowCreation' → Replace with Create
+- NameError 'GrowArrow' → Replace with Create or FadeIn
+- TypeError with Surface/ParametricSurface → Use basic shapes instead
+- TypeError with set_fill_by_value → Use .set_fill(color, opacity)
+- OSError with SVG/image files → NEVER use external files, draw with shapes instead
+- Missing imports → Add: from manim import *
+
+SAFE REPLACEMENTS:
+- Complex 3D surfaces → Cube(), Sphere(), Prism()
+- Parametric functions → Basic shapes with positioning
+- Advanced camera → Simple scene without camera manipulation
+- SVGMobject("file.svg") → Draw the shape using Circle, Polygon, VGroup, etc.
+- ImageMobject → Not allowed, use shapes only"""
 
         user_prompt = f"""Error: {error_message}
 
@@ -184,7 +298,7 @@ Code:
 {broken_code}
 ```
 
-Fix it."""
+Fix the error using safe Manim patterns. Keep visuals similar but use reliable methods."""
 
         logger.info("Fixing Manim code based on error feedback")
 
@@ -382,24 +496,34 @@ Fix it."""
                 timeout=300,  # 5 minute timeout
             )
 
+            # Log output for debugging
+            if result.stdout:
+                logger.info(f"Manim stdout: {result.stdout[-1000:]}")  # Last 1000 chars
+            if result.stderr:
+                logger.warning(f"Manim stderr: {result.stderr[-1000:]}")  # Last 1000 chars
+
             if result.returncode != 0:
                 error_msg = f"Manim rendering failed: {result.stderr}"
                 logger.error(error_msg)
                 raise Exception(error_msg)
 
-            # Find the output video file
-            video_path = output_dir / "videos" / manim_file.stem / quality / "manim_output.mp4"
+            # Search for the output video file more comprehensively
+            import os
+            video_path = None
 
-            if not video_path.exists():
-                # Try alternative path structure
-                for quality_dir in ["1080p60", "720p30", "480p15"]:
-                    alt_path = output_dir / "videos" / manim_file.stem / quality_dir / "manim_output.mp4"
-                    if alt_path.exists():
-                        video_path = alt_path
-                        break
+            # Search all subdirectories for manim_output.mp4
+            for root, dirs, files in os.walk(output_dir):
+                if "manim_output.mp4" in files:
+                    video_path = Path(root) / "manim_output.mp4"
+                    logger.info(f"Found video at: {video_path}")
+                    break
 
-            if not video_path.exists():
-                raise Exception(f"Rendered video not found. Expected at: {video_path}")
+            if not video_path or not video_path.exists():
+                # Log directory structure for debugging
+                logger.error(f"Video not found. Directory structure of {output_dir}:")
+                for root, dirs, files in os.walk(output_dir):
+                    logger.error(f"  {root}: {files}")
+                raise Exception(f"Rendered video not found after searching {output_dir}")
 
             logger.info(f"Video rendered successfully: {video_path}")
 

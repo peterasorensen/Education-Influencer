@@ -76,7 +76,8 @@ function App() {
 
     try {
       // Send POST request to backend
-      const response = await fetch('http://localhost:8000/api/generate', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -91,7 +92,8 @@ function App() {
       const data: VideoGenerationResponse = await response.json();
 
       // Connect to WebSocket for progress updates
-      const wsUrl = data.websocketUrl || `ws://localhost:8000/ws/${data.jobId}`;
+      const wsBaseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+      const wsUrl = data.websocketUrl || `${wsBaseUrl}/ws/${data.jobId}`;
       connectWebSocket(wsUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start video generation');
@@ -123,7 +125,8 @@ function App() {
         } else if (data.type === 'complete') {
           const complete: VideoGenerationComplete = data.data;
           // Prepend backend URL to relative video path
-          const fullVideoUrl = `http://localhost:8000${complete.videoUrl}`;
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+          const fullVideoUrl = `${apiUrl}${complete.videoUrl}`;
           setVideoUrl(fullVideoUrl);
           setIsGenerating(false);
           setConnectionState('disconnected');
