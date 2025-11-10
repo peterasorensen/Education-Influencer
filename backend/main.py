@@ -309,6 +309,17 @@ async def generate_video_pipeline(
     try:
         logger.info(f"Starting video generation for job {job_id}: {topic}")
 
+        # Clean up old output directories to save space
+        if BASE_OUTPUT_DIR.exists():
+            import shutil
+            for old_dir in BASE_OUTPUT_DIR.iterdir():
+                if old_dir.is_dir():
+                    try:
+                        shutil.rmtree(old_dir)
+                        logger.info(f"Cleaned up old output directory: {old_dir}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up {old_dir}: {e}")
+
         # Create job output directory
         job_dir = BASE_OUTPUT_DIR / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
