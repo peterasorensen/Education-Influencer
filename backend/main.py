@@ -620,13 +620,22 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
                 }
             )
 
-        # Keep connection alive
+        # Keep connection alive with periodic pings
+        last_ping = asyncio.get_event_loop().time()
         while True:
             try:
-                # Wait for messages with timeout to keep connection alive
+                # Wait for messages with timeout
                 await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
             except asyncio.TimeoutError:
-                # No message received, just continue
+                # Send ping every 30 seconds to keep connection alive through Cloudflare
+                current_time = asyncio.get_event_loop().time()
+                if current_time - last_ping > 30:
+                    try:
+                        await websocket.send_json({"type": "ping"})
+                        last_ping = current_time
+                    except Exception as e:
+                        logger.warning(f"Failed to send ping: {e}")
+                        break
                 continue
             except WebSocketDisconnect:
                 break
