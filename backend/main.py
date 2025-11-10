@@ -51,8 +51,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "https://yourdomain.com",  # Replace with your Vercel domain
-        "https://*.vercel.app",  # Allow Vercel preview deployments
+        "https://education-influencer.vercel.app",
+        "https://eduvideo.bankrupt.fyi",
     ],
     allow_credentials=True,
     allow_methods=["*"],
