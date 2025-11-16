@@ -7,7 +7,9 @@ This package contains modules for generating educational videos with:
 - Timestamp extraction
 - Visual instruction generation
 - Manim video generation
-- Video stitching
+- Image to video generation (celebrity animations)
+- Lipsync generation
+- Video stitching and compositing
 """
 
 from .script_generator import ScriptGenerator
@@ -15,6 +17,8 @@ from .audio_generator import AudioGenerator
 from .timestamp_extractor import TimestampExtractor
 from .visual_script_generator import VisualScriptGenerator
 from .manim_generator import ManimGenerator
+from .image_to_video_generator import ImageToVideoGenerator
+from .lipsync_generator import LipsyncGenerator
 from .video_stitcher import VideoStitcher
 
 __all__ = [
@@ -23,5 +27,7 @@ __all__ = [
     "TimestampExtractor",
     "VisualScriptGenerator",
     "ManimGenerator",
+    "ImageToVideoGenerator",
+    "LipsyncGenerator",
     "VideoStitcher",
 ]

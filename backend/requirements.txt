@@ -7,6 +7,9 @@ python-multipart==0.0.6
 # OpenAI SDK
 openai==1.10.0
 
+# Replicate SDK for AI video generation
+replicate==0.25.1
+
 # Audio Processing
 pydub==0.25.1
 

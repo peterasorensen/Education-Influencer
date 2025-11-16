@@ -51,23 +51,30 @@ class ScriptGenerator:
             if progress_callback:
                 progress_callback("Generating conversational script...", 10)
 
-            system_prompt = """Create an educational script with 2-3 voices for a short animated video.
+            system_prompt = """Create an educational script with 2-3 voices for a short ANIMATED video.
 
-Keep it simple:
-- Use different speakers (give them names)
-- Reference visuals when explaining
-- Make it engaging for the topic
-- Keep segments short (1-2 sentences each)
+CRITICAL - Write for animation:
+- Speakers should POINT TO visuals ("Look at this equation", "See how these two fractions...", "Here's what happens when...")
+- Break into visual steps ("First, let's draw...", "Next, we'll add...", "Now watch as...")
+- Use concrete, drawable examples (actual numbers, specific shapes, real objects)
+- Build concepts progressively (step 1, step 2, step 3)
+- Short segments (1-2 sentences) to match visual changes
 
-Return JSON array with:
-- "speaker": name of speaker
-- "text": what they say"""
+TEACHING STYLE:
+- One main explainer, others ask clarifying questions
+- Natural conversation flow
+- Simple, clear language
+- Each line connects to something visual
+
+Return JSON array:
+- "speaker": character name
+- "text": dialogue (naturally references what's shown)"""
 
             user_prompt = f"""Topic: {topic}
 Duration: ~{duration_seconds} seconds
-Target segments: {max(8, duration_seconds // 5)}
+Segments: {max(8, duration_seconds // 5)}
 
-Create an engaging script."""
+Write dialogue where speakers explain BY SHOWING - every line should reference a visual element or step."""
 
             logger.info(f"Generating script for topic: {topic}")
 
@@ -82,26 +89,39 @@ Create an engaging script."""
             )
 
             content = response.choices[0].message.content
-            logger.debug(f"Raw response: {content}")
+            logger.info(f"Script response preview (first 500 chars): {content[:500]}")
 
             # Parse JSON response
             parsed = json.loads(content)
 
-            # Handle different possible JSON structures
-            if "script" in parsed:
-                script = parsed["script"]
-            elif "dialogue" in parsed:
-                script = parsed["dialogue"]
-            elif isinstance(parsed, list):
+            # Handle different possible JSON structures - try multiple keys
+            script = None
+            possible_keys = ["script", "dialogue", "segments", "conversation", "lines", "content", "data"]
+
+            if isinstance(parsed, list):
                 script = parsed
-            else:
-                # Try to find the first list in the parsed object
-                for value in parsed.values():
-                    if isinstance(value, list):
-                        script = value
+            elif isinstance(parsed, dict):
+                # Try known keys first
+                for key in possible_keys:
+                    if key in parsed and isinstance(parsed[key], list):
+                        script = parsed[key]
+                        logger.info(f"Found script under key: {key}")
                         break
-                else:
-                    raise ValueError("Could not find script array in response")
+
+                # If still not found, try ANY list value
+                if script is None:
+                    for key, value in parsed.items():
+                        if isinstance(value, list) and len(value) > 0:
+                            # Check if it looks like a script (has speaker/text)
+                            if isinstance(value[0], dict) and ("speaker" in value[0] or "text" in value[0]):
+                                script = value
+                                logger.info(f"Found script-like list under key: {key}")
+                                break
+
+            if script is None:
+                logger.error(f"Failed to find script in response. Keys found: {list(parsed.keys()) if isinstance(parsed, dict) else 'not a dict'}")
+                logger.error(f"Full response: {content}")
+                raise ValueError(f"Could not find script array in response. Available keys: {list(parsed.keys()) if isinstance(parsed, dict) else 'none'}")
 
             # Validate script format
             if not isinstance(script, list) or len(script) == 0:

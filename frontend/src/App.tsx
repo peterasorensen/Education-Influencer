@@ -34,12 +34,22 @@ const PIPELINE_STEPS: StepInfo[] = [
   {
     key: 'generating_animations',
     label: 'Generating Animations',
-    description: 'Creating visual content',
+    description: 'Creating visual content (9:16 format)',
   },
   {
-    key: 'stitching_video',
-    label: 'Stitching Video',
-    description: 'Combining audio and visuals',
+    key: 'creating_celebrity_videos',
+    label: 'Creating Celebrity Video',
+    description: 'Generating expressive celebrity narrator',
+  },
+  {
+    key: 'lip_syncing',
+    label: 'Lip-Syncing',
+    description: 'Synchronizing audio with celebrity video',
+  },
+  {
+    key: 'compositing_video',
+    label: 'Compositing Video',
+    description: 'Combining education & celebrity into 9:16 video',
   },
 ];
 
@@ -101,7 +111,7 @@ function App() {
     }
   };
 
-  const connectWebSocket = (url: string) => {
+  const connectWebSocket = (url: string, retryCount = 0) => {
     setConnectionState('connecting');
 
     const ws = new WebSocket(url);
@@ -109,6 +119,7 @@ function App() {
 
     ws.onopen = () => {
       setConnectionState('connected');
+      console.log('WebSocket connected');
     };
 
     ws.onmessage = (event) => {
@@ -134,6 +145,9 @@ function App() {
           setError(data.message || 'An error occurred during video generation');
           setIsGenerating(false);
           setConnectionState('error');
+        } else if (data.type === 'ping') {
+          // Respond to server pings to keep connection alive
+          console.log('Received ping from server');
         }
       } catch (err) {
         console.error('Failed to parse WebSocket message:', err);
@@ -142,15 +156,24 @@ function App() {
 
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
-      setError('Connection error. Please try again.');
-      setConnectionState('error');
-      setIsGenerating(false);
     };
 
-    ws.onclose = () => {
-      setConnectionState('disconnected');
-      if (isGenerating) {
-        setIsGenerating(false);
+    ws.onclose = (event) => {
+      console.log('WebSocket closed:', event.code, event.reason);
+
+      // If we're still generating and connection closed unexpectedly, try to reconnect
+      if (isGenerating && retryCount < 3) {
+        console.log(`Attempting to reconnect (attempt ${retryCount + 1}/3)...`);
+        setConnectionState('connecting');
+        setTimeout(() => {
+          connectWebSocket(url, retryCount + 1);
+        }, 2000 * (retryCount + 1)); // Exponential backoff
+      } else {
+        setConnectionState('disconnected');
+        if (isGenerating && retryCount >= 3) {
+          setError('Lost connection to server. Your video may still be processing.');
+          setIsGenerating(false);
+        }
       }
     };
   };

@@ -63,42 +63,53 @@ class VisualScriptGenerator:
             # Prepare script text with timestamps if available
             script_text = self._format_script_for_prompt(script, aligned_timestamps)
 
-            system_prompt = """Design visual instructions for an educational animation using Manim.
+            system_prompt = """Design creative visual instructions for an educational animation using Manim.
+
+BE CREATIVE AND ENGAGING:
+- Use animations, colors, movements, and effects to make concepts come alive
+- Add visual flair: particle effects, smooth transitions, highlighting, emphasis
+- Make it visually interesting - don't just show static shapes
+- Use motion to guide the viewer's attention
+- Combine multiple visual elements creatively
 
 For math/equations:
-- Always include the mathematical notation being discussed
-- Show step-by-step transformations of equations
-- If helpful, use visual models (fraction bars, number lines, grids) to represent operations
-- Highlight the parts being manipulated
+- Show mathematical notation being discussed
+- Visualize abstract concepts with creative models (fraction bars, grids, geometric shapes, number lines)
+- Animate step-by-step transformations
+- Use colors and highlights to emphasize key parts
 
 For science:
-- Draw the actual structures/objects being discussed (molecules, cells, atoms, planets)
-- Label important parts
-- Show processes with arrows and transformations
+- Draw structures/objects being discussed (molecules, cells, atoms, planets, etc.)
+- Use creative representations (glowing particles, orbiting electrons, flowing processes)
+- Show dynamic processes with animations and transformations
+- Label and highlight important elements
 
-SPATIAL MANAGEMENT (CRITICAL):
-- Use different screen positions: UP, DOWN, LEFT, RIGHT, TOP, BOTTOM
-- Move old objects out of the way: shift them UP/LEFT, fade opacity, or scale down
-- Position new content where there's space
-- For titles/equations at top: keep them small or move them aside when drawing below
-- For step-by-step: arrange vertically or horizontally with clear spacing
+SPATIAL MANAGEMENT & CONTENT LIFECYCLE:
+- Use different screen positions to avoid overlaps
+- REMOVE old content when it's no longer needed (especially intro titles after 2-3 seconds)
+- Specify when to fade out, move aside, or remove previous elements
+- Keep the screen clean - don't let content accumulate indefinitely
+- Arrange elements with good spacing and visual flow
+- Transition between scenes by clearing old content first
 
 Return JSON with "instructions" key containing array of objects. Each object must have:
 - "narration": the text being spoken
-- "visual_type": equation, fraction_model, diagram, molecular_structure, etc. (be specific)
-- "description": EXACTLY what to draw AND where to position it (UP, DOWN, LEFT, RIGHT, center, etc.)
-- "manim_elements": MathTex for equations, specific shapes for models
-- "builds_on": how this adds to previous visual without covering it
-- "positioning": explicit positioning instructions to avoid overlaps
+- "visual_type": be creative and specific (equation, animated_model, particle_system, transformation, etc.)
+- "description": what to draw, how to animate it, where to position it, what colors/effects to use
+- "manim_elements": specific Manim objects to use
+- "builds_on": how this adds to or transforms previous visuals
+- "positioning": positioning to avoid overlaps
+- "cleanup": what previous content to remove/fade (e.g., "fade out intro title", "remove previous diagram", "keep nothing")
 
-Example for "Let's multiply one half by two thirds":
+Example:
 {"instructions": [{
   "narration": "Let's multiply one half by two thirds",
-  "visual_type": "equation",
-  "description": "Write the equation 1/2 × 2/3 using MathTex at the top of screen",
-  "manim_elements": ["MathTex for the multiplication expression"],
-  "builds_on": "Starting point for the problem",
-  "positioning": "Place at TOP, leaving center area free for visual model"
+  "visual_type": "animated_equation_with_visual_model",
+  "description": "Write the equation 1/2 × 2/3 with a smooth write animation, then create colorful fraction bars that fade in below it",
+  "manim_elements": ["MathTex", "Rectangle", "VGroup", "animations"],
+  "builds_on": "Starting point",
+  "positioning": "Equation at TOP, visual model in CENTER",
+  "cleanup": "fade out intro title after 2 seconds"
 }]}"""
 
             user_prompt = f"""Topic: {topic}
@@ -106,18 +117,31 @@ Example for "Let's multiply one half by two thirds":
 Timestamped script:
 {script_text}
 
-For EACH line of narration, analyze what concept is being explained and design the appropriate visual:
+For EACH line of narration, design creative and engaging visuals that MATCH what's being said:
 
-MATH EXAMPLES:
-- "multiply 1/2 by 3/4" → Show MathTex equation "1/2 × 3/4", then draw TWO fraction bars: one split in 2 parts (shade 1), one split in 4 parts (shade 3)
-- "what is 25% of 80" → Show MathTex "25% × 80", draw a bar representing 100, divide it into 4 parts (25% each), show 80 inside
-- "solve x + 5 = 12" → Show the equation, then show step-by-step: subtract 5 from both sides, show x = 7
+LISTEN TO THE NARRATION:
+- If speaker says "look at this equation" → show that exact equation
+- If speaker says "First, let's draw..." → create that drawing at that moment
+- If speaker says "see how these connect" → show the connection with an arrow or line
+- Match the visual to the EXACT words being spoken
 
-SCIENCE EXAMPLES:
-- "photosynthesis uses CO2 and water" → Draw the chemical equation, then draw representations of CO2 molecules (C with two Os) and H2O molecules
-- "the earth orbits the sun" → Draw a large yellow sphere (sun) in center, smaller blue sphere (earth) moving in elliptical path around it
+CREATIVE VISUAL IDEAS:
+- Use smooth animations (Write, Create, FadeIn, Transform, morphing)
+- Add motion and dynamics (rotating, pulsing, flowing, expanding)
+- Use colors strategically (gradients, highlighting, color-coding)
+- Combine multiple elements (equations with visual models, diagrams with labels and arrows)
+- Create visual metaphors and representations
+- Add emphasis effects (Flash, Indicate, Wiggle, glowing)
+- Use particle effects and creative shapes
+- Make transformations smooth and visually interesting
 
-Design visuals that DIRECTLY illustrate the specific concept being discussed in that narration line."""
+Examples of creative approaches:
+- Fractions: animated fraction bars that split and merge, colorful shaded regions, grid patterns
+- Chemistry: glowing molecules that bond together, electron clouds, animated reactions
+- Physics: motion trails, force arrows, orbiting objects with paths
+- Math: numbers that transform into each other, equations that rearrange themselves, geometric proofs with colored shapes
+
+Be creative! Make the educational content visually captivating."""
 
             logger.info(f"Generating visual instructions for topic: {topic}")
 
@@ -230,6 +254,7 @@ Design visuals that DIRECTLY illustrate the specific concept being discussed in 
                 "description": instruction.get("description", ""),
                 "manim_elements": instruction.get("manim_elements", []),
                 "builds_on": instruction.get("builds_on", ""),
+                "cleanup": instruction.get("cleanup", ""),
             }
 
             # Add timestamp - CRITICAL for syncing

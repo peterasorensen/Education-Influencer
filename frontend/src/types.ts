@@ -6,7 +6,9 @@ export type PipelineStep =
   | 'extracting_timestamps'
   | 'planning_visuals'
   | 'generating_animations'
-  | 'stitching_video';
+  | 'creating_celebrity_videos'
+  | 'lip_syncing'
+  | 'compositing_video';
 
 export interface ProgressUpdate {
   step: PipelineStep;
