@@ -12,6 +12,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 import os
 import uuid
+import json
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
@@ -29,6 +30,7 @@ from pipeline import (
     ImageToVideoGenerator,
     LipsyncGenerator,
     VideoStitcher,
+    ResumeDetector,
 )
 
 # Load environment variables from .env file
@@ -82,8 +84,12 @@ CELEBRITY_IMAGES = {
 }
 
 
-def cleanup_old_outputs():
+def cleanup_old_outputs(skip_cleanup: bool = False):
     """Clean up old output directories and media folder on startup to save space."""
+    if skip_cleanup:
+        logger.info("Skipping cleanup (resume mode enabled)")
+        return
+
     import shutil
 
     # Clean up output directories
@@ -134,6 +140,10 @@ class VideoGenerationRequest(BaseModel):
     celebrity: str = Field(
         default="drake",
         description="Celebrity for lip-synced video (drake, sydney_sweeney)",
+    )
+    resume_job_id: Optional[str] = Field(
+        default=None,
+        description="Optional job ID to resume from (skips cleanup and completed steps)",
     )
 
 
@@ -353,6 +363,7 @@ async def generate_video_pipeline(
     quality: str,
     enable_subtitles: bool,
     celebrity: str = "drake",
+    resume_from_job: Optional[str] = None,
 ):
     """
     Main video generation pipeline with celebrity lip-sync.
@@ -364,6 +375,7 @@ async def generate_video_pipeline(
         quality: Video quality setting
         enable_subtitles: Whether to add subtitles
         celebrity: Celebrity for lip-synced video (drake, sydney_sweeney)
+        resume_from_job: Optional job ID to resume from (skips cleanup and completed steps)
     """
     try:
         # Wait for WebSocket connection before starting
@@ -384,9 +396,36 @@ async def generate_video_pipeline(
         # Ensure output directory exists
         BASE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Create job output directory
-        job_dir = BASE_OUTPUT_DIR / job_id
-        job_dir.mkdir(parents=True, exist_ok=True)
+        # Handle resume logic
+        resume_mode = resume_from_job is not None
+        if resume_mode:
+            # Resume from existing job directory
+            job_dir = BASE_OUTPUT_DIR / resume_from_job
+            if not job_dir.exists():
+                raise Exception(f"Cannot resume: job directory not found: {resume_from_job}")
+
+            logger.info(f"RESUME MODE: Resuming from job {resume_from_job}")
+
+            # Detect completed steps
+            resume_detector = ResumeDetector(job_dir)
+            completed_steps = resume_detector.detect_completed_steps()
+            resume_point = resume_detector.get_resume_point()
+
+            logger.info(resume_detector.get_summary())
+            logger.info(f"Resuming from: {resume_point}")
+
+            # Send resume summary to user
+            await send_progress_update(
+                job_id,
+                f"Resuming from {resume_point} (skipping {sum(completed_steps.values())} completed steps)",
+                5
+            )
+        else:
+            # Create new job output directory
+            job_dir = BASE_OUTPUT_DIR / job_id
+            job_dir.mkdir(parents=True, exist_ok=True)
+            completed_steps = {}
+            resume_point = "script"
 
         # Initialize pipeline modules
         script_gen = ScriptGenerator(OPENAI_API_KEY)
@@ -411,132 +450,179 @@ async def generate_video_pipeline(
             raise FileNotFoundError(f"Celebrity image not found: {celebrity_image}")
 
         # Step 1: Generate Script
-        await send_progress_update(job_id, "Generating script...", 5)
-        script = await script_gen.generate_script(
-            topic=topic,
-            duration_seconds=duration_seconds,
-            progress_callback=lambda msg, prog: asyncio.create_task(
-                send_progress_update(job_id, msg, prog)
-            ),
-        )
-        logger.info(f"Script generated with {len(script)} segments")
-
-        # Save script
         script_path = job_dir / "script.json"
-        import json
-        script_path.write_text(json.dumps(script, indent=2), encoding="utf-8")
+        if completed_steps.get("script"):
+            logger.info("⏩ Skipping script generation (already completed)")
+            script = json.loads(script_path.read_text(encoding="utf-8"))
+            await send_progress_update(job_id, "Script loaded from cache", 10)
+        else:
+            await send_progress_update(job_id, "Generating script...", 5)
+            script = await script_gen.generate_script(
+                topic=topic,
+                duration_seconds=duration_seconds,
+                progress_callback=lambda msg, prog: asyncio.create_task(
+                    send_progress_update(job_id, msg, prog)
+                ),
+            )
+            logger.info(f"Script generated with {len(script)} segments")
+
+            # Save script
+            script_path.write_text(json.dumps(script, indent=2), encoding="utf-8")
 
         # Step 2: Generate Audio
-        await send_progress_update(job_id, "Generating audio...", 20)
         audio_dir = job_dir / "audio_segments"
         final_audio_path = job_dir / "narration.mp3"
-        await audio_gen.generate_full_audio(
-            script=script,
-            output_dir=audio_dir,
-            final_output_path=final_audio_path,
-            progress_callback=lambda msg, prog: asyncio.create_task(
-                send_progress_update(job_id, msg, prog)
-            ),
-        )
-        logger.info(f"Audio generated: {final_audio_path}")
+        if completed_steps.get("audio"):
+            logger.info("⏩ Skipping audio generation (already completed)")
+            await send_progress_update(job_id, "Audio loaded from cache", 25)
+        else:
+            await send_progress_update(job_id, "Generating audio...", 20)
+            await audio_gen.generate_full_audio(
+                script=script,
+                output_dir=audio_dir,
+                final_output_path=final_audio_path,
+                progress_callback=lambda msg, prog: asyncio.create_task(
+                    send_progress_update(job_id, msg, prog)
+                ),
+            )
+            logger.info(f"Audio generated: {final_audio_path}")
 
         # Step 3: Extract Timestamps
-        await send_progress_update(job_id, "Extracting timestamps...", 45)
         srt_path = job_dir / "subtitles.srt"
-        timestamp_data = await timestamp_ext.extract_timestamps(
-            audio_path=final_audio_path,
-            output_srt_path=srt_path,
-            progress_callback=lambda msg, prog: asyncio.create_task(
-                send_progress_update(job_id, msg, prog)
-            ),
-        )
-        logger.info(f"Timestamps extracted: {len(timestamp_data['segments'])} segments")
+        if completed_steps.get("timestamps"):
+            logger.info("⏩ Skipping timestamp extraction (already completed)")
+            # Load timestamp data from SRT (we'll extract it)
+            # For now, we need to regenerate this step's data since we don't save timestamp_data
+            await send_progress_update(job_id, "Re-extracting timestamps (needed for alignment)...", 38)
+            timestamp_data = await timestamp_ext.extract_timestamps(
+                audio_path=final_audio_path,
+                output_srt_path=srt_path,
+                progress_callback=lambda msg, prog: asyncio.create_task(
+                    send_progress_update(job_id, msg, prog)
+                ),
+            )
+            aligned_script = await timestamp_ext.align_script_with_timestamps(
+                script=script,
+                timestamp_data=timestamp_data,
+            )
+            await send_progress_update(job_id, "Timestamps loaded from cache", 40)
+        else:
+            await send_progress_update(job_id, "Extracting timestamps...", 35)
+            timestamp_data = await timestamp_ext.extract_timestamps(
+                audio_path=final_audio_path,
+                output_srt_path=srt_path,
+                progress_callback=lambda msg, prog: asyncio.create_task(
+                    send_progress_update(job_id, msg, prog)
+                ),
+            )
+            logger.info(f"Timestamps extracted: {len(timestamp_data['segments'])} segments")
 
-        # Align script with timestamps
-        aligned_script = await timestamp_ext.align_script_with_timestamps(
-            script=script,
-            timestamp_data=timestamp_data,
-            progress_callback=lambda msg, prog: asyncio.create_task(
-                send_progress_update(job_id, msg, prog)
-            ),
-        )
+            # Align script with timestamps
+            aligned_script = await timestamp_ext.align_script_with_timestamps(
+                script=script,
+                timestamp_data=timestamp_data,
+                progress_callback=lambda msg, prog: asyncio.create_task(
+                    send_progress_update(job_id, msg, prog)
+                ),
+            )
 
         # Step 4: Generate Visual Instructions
-        await send_progress_update(job_id, "Generating visual instructions...", 55)
-        visual_instructions = await visual_gen.generate_visual_instructions(
-            script=script,
-            topic=topic,
-            aligned_timestamps=aligned_script,
-            progress_callback=lambda msg, prog: asyncio.create_task(
-                send_progress_update(job_id, msg, prog)
-            ),
-        )
-        logger.info(f"Visual instructions generated: {len(visual_instructions)} segments")
-
-        # Save visual instructions
         visual_path = job_dir / "visual_instructions.json"
-        visual_path.write_text(
-            json.dumps(visual_instructions, indent=2), encoding="utf-8"
-        )
+        if completed_steps.get("visual_instructions"):
+            logger.info("⏩ Skipping visual instructions (already completed)")
+            visual_instructions = json.loads(visual_path.read_text(encoding="utf-8"))
+            await send_progress_update(job_id, "Visual instructions loaded from cache", 47)
+        else:
+            await send_progress_update(job_id, "Generating visual instructions...", 45)
+            visual_instructions = await visual_gen.generate_visual_instructions(
+                script=script,
+                topic=topic,
+                aligned_timestamps=aligned_script,
+                progress_callback=lambda msg, prog: asyncio.create_task(
+                    send_progress_update(job_id, msg, prog)
+                ),
+            )
+            logger.info(f"Visual instructions generated: {len(visual_instructions)} segments")
+
+            # Save visual instructions
+            visual_path.write_text(
+                json.dumps(visual_instructions, indent=2), encoding="utf-8"
+            )
 
         # Step 5: Generate Manim Code
-        await send_progress_update(job_id, "Generating Manim code...", 50)
         manim_file = job_dir / "animation.py"
         audio_duration = timestamp_data.get('duration', 60.0)
-        await manim_gen.generate_manim_code(
-            visual_instructions=visual_instructions,
-            topic=topic,
-            output_path=manim_file,
-            target_duration=audio_duration,
-            progress_callback=lambda msg, prog: asyncio.create_task(
-                send_progress_update(job_id, msg, prog)
-            ),
-        )
-        logger.info(f"Manim code generated: {manim_file}")
+        if completed_steps.get("manim_code"):
+            logger.info("⏩ Skipping Manim code generation (already completed)")
+            await send_progress_update(job_id, "Manim code loaded from cache", 50)
+        else:
+            await send_progress_update(job_id, "Generating Manim code...", 50)
+            await manim_gen.generate_manim_code(
+                visual_instructions=visual_instructions,
+                topic=topic,
+                output_path=manim_file,
+                target_duration=audio_duration,
+                progress_callback=lambda msg, prog: asyncio.create_task(
+                    send_progress_update(job_id, msg, prog)
+                ),
+            )
+            logger.info(f"Manim code generated: {manim_file}")
 
         # Step 6: Render Manim Video (TOP HALF - 9:16 format)
-        # Wrap in retry loop in case full render fails with errors test render missed
+        manim_output_dir = job_dir / "manim_output"
         manim_video = None
-        for render_attempt in range(3):  # Up to 3 render attempts
-            try:
-                await send_progress_update(job_id, f"Rendering Manim animation (attempt {render_attempt + 1}/3)...", 55)
-                manim_output_dir = job_dir / "manim_output"
-                manim_video = await manim_gen.render_manim_video(
-                    manim_file=manim_file,
-                    output_dir=manim_output_dir,
-                    quality=quality,
-                    aspect_ratio="9:16",  # Mobile-friendly 9:16 aspect ratio
-                    progress_callback=lambda msg, prog: asyncio.create_task(
-                        send_progress_update(job_id, msg, prog)
-                    ),
-                )
-                logger.info(f"Manim video rendered: {manim_video}")
-                break  # Success! Exit retry loop
-            except Exception as render_error:
-                logger.warning(f"Manim render attempt {render_attempt + 1} failed: {render_error}")
-                if render_attempt < 2:  # Not last attempt
-                    # Regenerate code with the render error
-                    await send_progress_update(job_id, f"Render failed, regenerating code...", 52)
-                    manim_file = await manim_gen.generate_manim_code(
-                        visual_instructions=visual_instructions,
-                        topic=topic,
-                        output_path=manim_file,
-                        target_duration=audio_duration,
+
+        if completed_steps.get("manim_render"):
+            logger.info("⏩ Skipping Manim render (already completed)")
+            # Find existing rendered video
+            manim_videos = list(manim_output_dir.rglob("manim_output.mp4"))
+            if manim_videos:
+                manim_video = manim_videos[0]
+                logger.info(f"Using existing Manim video: {manim_video}")
+                await send_progress_update(job_id, "Manim video loaded from cache", 58)
+            else:
+                logger.warning("Manim render marked complete but video not found, re-rendering...")
+                completed_steps["manim_render"] = False
+
+        # Wrap in retry loop in case full render fails with errors test render missed
+        if not completed_steps.get("manim_render"):
+            for render_attempt in range(3):  # Up to 3 render attempts
+                try:
+                    await send_progress_update(job_id, f"Rendering Manim animation (attempt {render_attempt + 1}/3)...", 55)
+                    manim_video = await manim_gen.render_manim_video(
+                        manim_file=manim_file,
+                        output_dir=manim_output_dir,
+                        quality=quality,
+                        aspect_ratio="9:16",  # Mobile-friendly 9:16 aspect ratio
                         progress_callback=lambda msg, prog: asyncio.create_task(
                             send_progress_update(job_id, msg, prog)
                         ),
                     )
-                    logger.info(f"Manim code regenerated after render failure")
-                else:
-                    # Last attempt failed, raise error
-                    raise
+                    logger.info(f"Manim video rendered: {manim_video}")
+                    break  # Success! Exit retry loop
+                except Exception as render_error:
+                    logger.warning(f"Manim render attempt {render_attempt + 1} failed: {render_error}")
+                    if render_attempt < 2:  # Not last attempt
+                        # Regenerate code with the render error
+                        await send_progress_update(job_id, f"Render failed, regenerating code...", 52)
+                        manim_file = await manim_gen.generate_manim_code(
+                            visual_instructions=visual_instructions,
+                            topic=topic,
+                            output_path=manim_file,
+                            target_duration=audio_duration,
+                            progress_callback=lambda msg, prog: asyncio.create_task(
+                                send_progress_update(job_id, msg, prog)
+                            ),
+                        )
+                        logger.info(f"Manim code regenerated after render failure")
+                    else:
+                        # Last attempt failed, raise error
+                        raise
 
         if not manim_video:
             raise Exception("Failed to render Manim video after 3 attempts")
 
         # Step 7: Generate Celebrity Videos from Image (BOTTOM HALF) - PER SEGMENT
-        await send_progress_update(job_id, "Generating celebrity videos per segment...", 60)
-
         # Get individual audio segment files
         audio_segment_files = sorted(list(audio_dir.glob("segment_*.mp3")))
         logger.info(f"Found {len(audio_segment_files)} audio segments to process")
@@ -544,109 +630,136 @@ async def generate_video_pipeline(
         if not audio_segment_files:
             raise Exception("No audio segments found! Cannot generate celebrity videos.")
 
-        # Prepare directories
         celebrity_video_dir = job_dir / "celebrity_videos"
         celebrity_video_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate celebrity video for each segment
-        celebrity_video_segments = []
         total_segments = len(audio_segment_files)
 
-        for idx, audio_segment_path in enumerate(audio_segment_files):
-            segment_progress = int(60 + (idx / total_segments) * 15)
-            await send_progress_update(
-                job_id,
-                f"Generating celebrity video {idx + 1}/{total_segments}...",
-                segment_progress
-            )
+        if completed_steps.get("celebrity_videos"):
+            logger.info("⏩ Skipping celebrity video generation (already completed)")
+            # Load existing celebrity videos
+            celebrity_video_segments = sorted(list(celebrity_video_dir.glob("segment_*.mp4")))
+            logger.info(f"Using {len(celebrity_video_segments)} existing celebrity videos")
+            await send_progress_update(job_id, "Celebrity videos loaded from cache", 70)
+        else:
+            await send_progress_update(job_id, "Generating celebrity videos per segment...", 60)
 
-            # Get duration of this audio segment using ffprobe
-            segment_duration = await video_stitcher._get_duration(audio_segment_path)
-            logger.info(f"Segment {idx}: {segment_duration:.2f}s")
+            # Generate celebrity video for each segment
+            celebrity_video_segments = []
 
-            # Generate celebrity video for this segment
-            celebrity_segment_path = celebrity_video_dir / f"segment_{idx:03d}.mp4"
+            for idx, audio_segment_path in enumerate(audio_segment_files):
+                segment_progress = int(60 + (idx / total_segments) * 15)
+                await send_progress_update(
+                    job_id,
+                    f"Generating celebrity video {idx + 1}/{total_segments}...",
+                    segment_progress
+                )
 
-            # Use varied prompts for natural variety
-            prompts = [
-                "natural talking expression, engaging eye contact, friendly smile, slight head nod",
-                "expressive speaking, warm expression, subtle gestures, natural movement",
-                "animated talking, enthusiastic expression, gentle head tilt, engaging presence",
-                "conversational speaking, genuine smile, soft eye contact, relaxed posture",
-                "energetic narration, dynamic expression, natural hand gestures, confident delivery",
-            ]
-            prompt = prompts[idx % len(prompts)]
+                # Get duration of this audio segment using ffprobe
+                segment_duration = await video_stitcher._get_duration(audio_segment_path)
+                logger.info(f"Segment {idx}: {segment_duration:.2f}s")
 
-            await img_to_video_gen.generate_video_from_image(
-                image_path=celebrity_image,
-                duration=segment_duration,
-                prompt=prompt,
-                output_path=celebrity_segment_path,
-                aspect_ratio="9:16",
-            )
-            celebrity_video_segments.append(celebrity_segment_path)
-            logger.info(f"Celebrity video segment {idx} generated: {celebrity_segment_path}")
+                # Generate celebrity video for this segment
+                celebrity_segment_path = celebrity_video_dir / f"segment_{idx:03d}.mp4"
+
+                # Use varied prompts for natural variety
+                prompts = [
+                    "natural talking expression, engaging eye contact, friendly smile, slight head nod",
+                    "expressive speaking, warm expression, subtle gestures, natural movement",
+                    "animated talking, enthusiastic expression, gentle head tilt, engaging presence",
+                    "conversational speaking, genuine smile, soft eye contact, relaxed posture",
+                    "energetic narration, dynamic expression, natural hand gestures, confident delivery",
+                ]
+                prompt = prompts[idx % len(prompts)]
+
+                await img_to_video_gen.generate_video_from_image(
+                    image_path=celebrity_image,
+                    duration=segment_duration,
+                    prompt=prompt,
+                    output_path=celebrity_segment_path,
+                    aspect_ratio="9:16",
+                )
+                celebrity_video_segments.append(celebrity_segment_path)
+                logger.info(f"Celebrity video segment {idx} generated: {celebrity_segment_path}")
 
         # Step 8: Lip-sync Each Celebrity Video Segment with Its Audio
-        await send_progress_update(job_id, "Lip-syncing video segments with audio...", 75)
-
         lipsynced_video_dir = job_dir / "lipsynced_videos"
         lipsynced_video_dir.mkdir(parents=True, exist_ok=True)
 
-        lipsynced_segments = []
+        if completed_steps.get("lipsynced_videos"):
+            logger.info("⏩ Skipping lip-sync (already completed)")
+            # Load existing lip-synced videos
+            lipsynced_segments = sorted(list(lipsynced_video_dir.glob("lipsynced_*.mp4")))
+            logger.info(f"Using {len(lipsynced_segments)} existing lip-synced videos")
+            await send_progress_update(job_id, "Lip-synced videos loaded from cache", 85)
+        else:
+            await send_progress_update(job_id, "Lip-syncing video segments with audio...", 75)
 
-        for idx, (video_segment, audio_segment) in enumerate(zip(celebrity_video_segments, audio_segment_files)):
-            segment_progress = int(75 + (idx / total_segments) * 15)
-            await send_progress_update(
-                job_id,
-                f"Lip-syncing segment {idx + 1}/{total_segments}...",
-                segment_progress
+            lipsynced_segments = []
+
+            for idx, (video_segment, audio_segment) in enumerate(zip(celebrity_video_segments, audio_segment_files)):
+                segment_progress = int(75 + (idx / total_segments) * 15)
+                await send_progress_update(
+                    job_id,
+                    f"Lip-syncing segment {idx + 1}/{total_segments}...",
+                    segment_progress
+                )
+
+                # Lip-sync this segment
+                lipsynced_segment_path = lipsynced_video_dir / f"lipsynced_{idx:03d}.mp4"
+
+                await lipsync_gen.sync_audio_to_video(
+                    video_path=video_segment,
+                    audio_path=audio_segment,
+                    output_path=lipsynced_segment_path,
+                )
+                lipsynced_segments.append(lipsynced_segment_path)
+                logger.info(f"Lip-synced segment {idx} created: {lipsynced_segment_path}")
+
+            # Step 8b: Concatenate all lip-synced segments into one video
+            await send_progress_update(job_id, "Concatenating lip-synced segments...", 88)
+
+            lipsynced_video = job_dir / "celebrity_lipsynced_full.mp4"
+
+            await video_stitcher.concatenate_videos(
+                video_paths=lipsynced_segments,
+                output_path=lipsynced_video,
+                progress_callback=lambda msg, prog: asyncio.create_task(
+                    send_progress_update(job_id, msg, int(88 + prog * 0.02))
+                ),
             )
+            logger.info(f"All lip-synced segments concatenated: {lipsynced_video}")
 
-            # Lip-sync this segment
-            lipsynced_segment_path = lipsynced_video_dir / f"lipsynced_{idx:03d}.mp4"
-
-            await lipsync_gen.sync_audio_to_video(
-                video_path=video_segment,
-                audio_path=audio_segment,
-                output_path=lipsynced_segment_path,
-            )
-            lipsynced_segments.append(lipsynced_segment_path)
-            logger.info(f"Lip-synced segment {idx} created: {lipsynced_segment_path}")
-
-        # Step 8b: Concatenate all lip-synced segments into one video
-        await send_progress_update(job_id, "Concatenating lip-synced segments...", 88)
-
+        # Load concatenated video if it exists (for resume case)
         lipsynced_video = job_dir / "celebrity_lipsynced_full.mp4"
 
-        await video_stitcher.concatenate_videos(
-            video_paths=lipsynced_segments,
-            output_path=lipsynced_video,
-            progress_callback=lambda msg, prog: asyncio.create_task(
-                send_progress_update(job_id, msg, int(88 + prog * 0.02))
-            ),
-        )
-        logger.info(f"All lip-synced segments concatenated: {lipsynced_video}")
-
         # Step 9: Composite Top (Manim) and Bottom (Celebrity) into 9:16 Video
-        await send_progress_update(job_id, "Compositing educational and celebrity videos...", 90)
         composite_video = job_dir / "composite_video.mp4"
 
-        await video_stitcher.composite_top_bottom_videos(
-            top_video_path=manim_video,
-            bottom_video_path=lipsynced_video,
-            audio_path=final_audio_path,
-            output_path=composite_video,
-            progress_callback=lambda msg, prog: asyncio.create_task(
-                send_progress_update(job_id, msg, int(90 + prog * 0.05))
-            ),
-        )
-        logger.info(f"Composite video created: {composite_video}")
+        if completed_steps.get("composite"):
+            logger.info("⏩ Skipping composite (already completed)")
+            await send_progress_update(job_id, "Composite video loaded from cache", 92)
+        else:
+            await send_progress_update(job_id, "Compositing educational and celebrity videos...", 90)
+
+            await video_stitcher.composite_top_bottom_videos(
+                top_video_path=manim_video,
+                bottom_video_path=lipsynced_video,
+                audio_path=final_audio_path,
+                output_path=composite_video,
+                progress_callback=lambda msg, prog: asyncio.create_task(
+                    send_progress_update(job_id, msg, int(90 + prog * 0.05))
+                ),
+            )
+            logger.info(f"Composite video created: {composite_video}")
 
         # Step 10: Add Subtitles (if enabled)
-        if enable_subtitles:
+        final_video = job_dir / "final_video.mp4"
+
+        if completed_steps.get("final"):
+            logger.info("⏩ Final video already exists")
+            await send_progress_update(job_id, "Final video loaded from cache", 98)
+        elif enable_subtitles:
             await send_progress_update(job_id, "Adding subtitles...", 95)
-            final_video = job_dir / "final_video.mp4"
             await video_stitcher.add_subtitles(
                 video_path=composite_video,
                 srt_path=srt_path,
@@ -656,6 +769,7 @@ async def generate_video_pipeline(
                 ),
             )
         else:
+            # No subtitles, just use composite as final
             final_video = composite_video
 
         logger.info(f"Final video ready: {final_video}")
@@ -675,8 +789,8 @@ async def generate_video_pipeline(
 # Startup event
 @app.on_event("startup")
 async def startup_event():
-    """Run cleanup on server startup."""
-    cleanup_old_outputs()
+    """Startup event - no cleanup here (cleanup happens when user clicks generate)."""
+    logger.info("Server started - output folders preserved for resume functionality")
 
 
 # API Endpoints
@@ -716,15 +830,24 @@ async def generate_video(
                 status_code=500, detail="OpenAI API key not configured"
             )
 
-        # Generate unique job ID
-        job_id = str(uuid.uuid4())
+        # Clean up old outputs before starting new job (skip if resuming)
+        if request.resume_job_id:
+            job_id = request.resume_job_id
+            logger.info(f"Resuming job: {job_id}")
+        else:
+            # Clean up before creating new job
+            logger.info("Cleaning up old outputs before starting new job...")
+            cleanup_old_outputs(skip_cleanup=False)
+
+            job_id = str(uuid.uuid4())
+            logger.info(f"Created new job: {job_id}")
 
         # Initialize job status
         job_status[job_id] = {
             "job_id": job_id,
             "status": "waiting_for_connection",
             "progress": 0,
-            "message": "Waiting for WebSocket connection...",
+            "message": "Waiting for WebSocket connection..." if not request.resume_job_id else "Resuming from previous job...",
             "topic": request.topic,
             "created_at": datetime.now().isoformat(),
         }
@@ -738,6 +861,7 @@ async def generate_video(
             quality=request.quality,
             enable_subtitles=request.enable_subtitles,
             celebrity=request.celebrity,
+            resume_from_job=request.resume_job_id,
         )
 
         logger.info(f"Video generation job created: {job_id}")

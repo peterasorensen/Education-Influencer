@@ -115,8 +115,13 @@ pip install -r requirements.txt
 
    **Model Costs** (per segment, defaults in parentheses):
    - Image-to-video: Seedance ~$0.04 (default) | Kling v2.5 ~$0.20
-   - Lip-sync: Kling ~$0.03 (default) | Pixverse ~$0.10
+   - Lip-sync: tmappdev ~$0.03 (default) | Kling ~$0.03 | Pixverse ~$0.10
    - **Total per 60s video** (12 segments): ~$0.84 with defaults 🎉
+
+   **Resume/Retry Feature:**
+   - If generation fails, you can resume from the last completed step
+   - Skips cleanup and reuses completed steps (saves time and money!)
+   - Just pass `resume_job_id` with the previous job ID in your request
 
 5. **Verify Manim installation**
    ```bash

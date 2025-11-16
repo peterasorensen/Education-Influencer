@@ -20,6 +20,7 @@ from .manim_generator import ManimGenerator
 from .image_to_video_generator import ImageToVideoGenerator
 from .lipsync_generator import LipsyncGenerator
 from .video_stitcher import VideoStitcher
+from .resume_detector import ResumeDetector
 
 __all__ = [
     "ScriptGenerator",
@@ -30,4 +31,5 @@ __all__ = [
     "ImageToVideoGenerator",
     "LipsyncGenerator",
     "VideoStitcher",
+    "ResumeDetector",
 ]

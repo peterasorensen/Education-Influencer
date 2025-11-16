@@ -60,6 +60,9 @@ function App() {
   const [progressSteps, setProgressSteps] = useState<Map<PipelineStep, ProgressUpdate>>(new Map());
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastJobId, setLastJobId] = useState<string | null>(localStorage.getItem('lastJobId'));
+  const [manualJobId, setManualJobId] = useState('');
+  const [resumeMode, setResumeMode] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
   // Cleanup WebSocket on unmount
@@ -74,8 +77,15 @@ function App() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!topic.trim()) {
+    if (!topic.trim() && !resumeMode) {
       setError('Please enter a topic');
+      return;
+    }
+
+    const jobIdToResume = manualJobId.trim() || lastJobId;
+
+    if (resumeMode && !jobIdToResume) {
+      setError('Please enter a job ID to resume');
       return;
     }
 
@@ -87,12 +97,17 @@ function App() {
     try {
       // Send POST request to backend
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+      const requestBody: any = resumeMode
+        ? { topic: topic || 'Resuming...', resume_job_id: jobIdToResume }
+        : { topic };
+
       const response = await fetch(`${apiUrl}/api/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ topic } as VideoGenerationRequest),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -100,6 +115,13 @@ function App() {
       }
 
       const data: VideoGenerationResponse = await response.json();
+
+      // Save job ID to localStorage
+      setLastJobId(data.jobId);
+      localStorage.setItem('lastJobId', data.jobId);
+
+      // Disable resume mode after starting
+      setResumeMode(false);
 
       // Connect to WebSocket for progress updates
       const wsBaseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
@@ -141,6 +163,7 @@ function App() {
           setVideoUrl(fullVideoUrl);
           setIsGenerating(false);
           setConnectionState('disconnected');
+          // Don't clear lastJobId - keep it for potential resume
         } else if (data.type === 'error') {
           setError(data.message || 'An error occurred during video generation');
           setIsGenerating(false);
@@ -198,21 +221,51 @@ function App() {
                 className="topic-input"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="Enter your educational topic... (e.g., 'Explain quantum entanglement', 'How does photosynthesis work?')"
-                disabled={isGenerating}
+                placeholder={resumeMode ? "Resuming from previous job..." : "Enter your educational topic... (e.g., 'Explain quantum entanglement', 'How does photosynthesis work?')"}
+                disabled={isGenerating || resumeMode}
                 rows={3}
               />
             </div>
+
+            {!isGenerating && (
+              <div className="resume-section">
+                <label className="resume-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={resumeMode}
+                    onChange={(e) => setResumeMode(e.target.checked)}
+                  />
+                  <span className="resume-label">
+                    Resume from existing job
+                  </span>
+                </label>
+                {resumeMode && (
+                  <div className="manual-job-input">
+                    <input
+                      type="text"
+                      className="job-id-input"
+                      value={manualJobId}
+                      onChange={(e) => setManualJobId(e.target.value)}
+                      placeholder={lastJobId ? `Last job: ${lastJobId}` : "Enter job ID (e.g., 550e8400-e29b-41d4...)"}
+                      disabled={isGenerating}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               type="submit"
-              className={`generate-button ${isGenerating ? 'generating' : ''}`}
+              className={`generate-button ${isGenerating ? 'generating' : ''} ${resumeMode ? 'resume-mode' : ''}`}
               disabled={isGenerating}
             >
               {isGenerating ? (
                 <>
                   <span className="spinner"></span>
-                  Generating...
+                  {resumeMode ? 'Resuming...' : 'Generating...'}
                 </>
+              ) : resumeMode ? (
+                '🔄 Resume & Continue'
               ) : (
                 'Generate Video'
               )}
@@ -315,6 +368,7 @@ function App() {
                     setVideoUrl(null);
                     setTopic('');
                     setProgressSteps(new Map());
+                    setResumeMode(false);
                   }}
                   className="new-video-button"
                 >

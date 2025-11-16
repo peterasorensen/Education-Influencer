@@ -20,7 +20,8 @@ class LipsyncGenerator:
 
     # Supported models
     MODELS = {
-        "kling": "kwaivgi/kling-lip-sync",  # Cheaper, faster
+        "tmappdev": "tmappdev/lipsync:569bcd925698ea23d4bece4528546992012d84267ce2438ecc803618ce23764c",  # Default, most reliable
+        "kling": "kwaivgi/kling-lip-sync",  # Alternative (has issues with file uploads)
         "pixverse": "pixverse/lipsync",     # Alternative option
     }
 
@@ -41,7 +42,7 @@ class LipsyncGenerator:
             os.environ["REPLICATE_API_TOKEN"] = self.api_token
 
         # Determine which model to use
-        model_name = model or os.getenv("LIPSYNC_MODEL", "kwaivgi/kling-lip-sync")
+        model_name = model or os.getenv("LIPSYNC_MODEL", "tmappdev")
 
         # Handle both full model paths and short names
         if model_name in self.MODELS.values():
@@ -49,8 +50,8 @@ class LipsyncGenerator:
         elif model_name in self.MODELS:
             self.model = self.MODELS[model_name]
         else:
-            logger.warning(f"Unknown lipsync model '{model_name}', defaulting to kling")
-            self.model = self.MODELS["kling"]
+            logger.warning(f"Unknown lipsync model '{model_name}', defaulting to tmappdev")
+            self.model = self.MODELS["tmappdev"]
 
         logger.info(f"LipsyncGenerator initialized with model: {self.model}")
 
@@ -82,36 +83,105 @@ class LipsyncGenerator:
             if progress_callback:
                 progress_callback(f"Synchronizing audio to video...", 0)
 
-            # Verify input files exist
+            # Verify input files exist and are valid
             if not video_path.exists():
                 raise FileNotFoundError(f"Video file not found: {video_path}")
             if not audio_path.exists():
                 raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
+            # Check file sizes to ensure they're not empty or corrupted
+            video_size = video_path.stat().st_size
+            audio_size = audio_path.stat().st_size
+
+            if video_size == 0:
+                raise ValueError(f"Video file is empty: {video_path}")
+            if audio_size == 0:
+                raise ValueError(f"Audio file is empty: {audio_path}")
+
+            logger.info(f"File validation passed - video: {video_size} bytes ({video_size/1024/1024:.2f} MB), audio: {audio_size} bytes ({audio_size/1024:.2f} KB)")
+            logger.info(f"Video path: {video_path.absolute()}")
+            logger.info(f"Audio path: {audio_path.absolute()}")
+
+            # Try to verify video file is valid by checking magic bytes
+            try:
+                with open(video_path, "rb") as f:
+                    header = f.read(12)
+                    logger.info(f"Video file header (first 12 bytes): {header.hex()}")
+
+                    # MP4 files should start with specific patterns
+                    # Common patterns: 00 00 00 ?? 66 74 79 70 (ftyp box)
+                    if b'ftyp' not in header:
+                        logger.warning(f"Video file may not be a valid MP4 - 'ftyp' signature not found in header")
+            except Exception as e:
+                logger.warning(f"Failed to read video header: {e}")
+
+            # Check audio file format
+            try:
+                with open(audio_path, "rb") as f:
+                    audio_header = f.read(4)
+                    logger.info(f"Audio file header (first 4 bytes): {audio_header.hex()}")
+
+                    # MP3 files often start with ID3 or FF FB/FF F3
+                    if audio_header.startswith(b'ID3'):
+                        logger.info("Audio file: MP3 with ID3 tags")
+                    elif audio_header[0:2] in [b'\xff\xfb', b'\xff\xf3', b'\xff\xf2']:
+                        logger.info("Audio file: MP3 without ID3 tags")
+                    else:
+                        logger.warning(f"Audio file may not be valid MP3")
+            except Exception as e:
+                logger.warning(f"Failed to read audio header: {e}")
+
             # Prepare output directory
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Open files for upload
+            # Open files for upload - keep them open during the entire Replicate call
             with open(video_path, "rb") as video_file, open(audio_path, "rb") as audio_file:
+                # Ensure file pointers are at the start
+                video_file.seek(0)
+                audio_file.seek(0)
+
+                logger.info(f"Opened files - video_file type: {type(video_file)}, audio_file type: {type(audio_file)}")
+                logger.info(f"Video file readable: {video_file.readable()}, Audio file readable: {audio_file.readable()}")
+
                 # Prepare model-specific parameters
-                if "kling" in self.model:
-                    # Kling lip-sync uses video_url and audio_file
-                    logger.info(f"Running Kling lip-sync model")
+                if "tmappdev" in self.model:
+                    # tmappdev/lipsync uses audio_input and video_input
+                    logger.info(f"Running tmappdev lipsync model: {self.model}")
+                    logger.info(f"  video_input parameter: {video_path.name} ({video_size/1024/1024:.2f} MB)")
+                    logger.info(f"  audio_input parameter: {audio_path.name} ({audio_size/1024:.2f} KB)")
 
                     model_input = {
-                        "video_url": video_file,  # Kling accepts file handle as video_url
+                        "video_input": video_file,
+                        "audio_input": audio_file,
+                        "fps": 25,
+                        "bbox_shift": 0,
+                    }
+                    timeout_seconds = 180  # 3 minute timeout
+                elif "kling" in self.model:
+                    # Kling lip-sync uses video_url and audio_file
+                    logger.info(f"Running Kling lip-sync model: {self.model}")
+                    logger.info(f"  video_url parameter: {video_path.name} ({video_size/1024/1024:.2f} MB)")
+                    logger.info(f"  audio_file parameter: {audio_path.name} ({audio_size/1024:.2f} KB)")
+
+                    model_input = {
+                        "video_url": video_file,
                         "audio_file": audio_file,
                     }
-                    timeout_seconds = 180  # 3 minute timeout for faster Kling
+                    timeout_seconds = 180  # 3 minute timeout
                 else:
                     # Pixverse uses video and audio
-                    logger.info(f"Running Pixverse lipsync model")
+                    logger.info(f"Running Pixverse lipsync model: {self.model}")
+                    logger.info(f"  video parameter: {video_path.name} ({video_size/1024/1024:.2f} MB)")
+                    logger.info(f"  audio parameter: {audio_path.name} ({audio_size/1024:.2f} KB)")
 
                     model_input = {
                         "video": video_file,
                         "audio": audio_file,
                     }
                     timeout_seconds = 300  # 5 minute timeout for Pixverse
+
+                logger.info(f"Calling replicate.run with model: {self.model}")
+                logger.info(f"Input parameters: {list(model_input.keys())}")
 
                 # Run with timeout to prevent infinite polling
                 try:
@@ -123,9 +193,18 @@ class LipsyncGenerator:
                         ),
                         timeout=timeout_seconds
                     )
+                    logger.info(f"Replicate call succeeded, output type: {type(output)}")
                 except asyncio.TimeoutError:
-                    model_name = "Kling" if "kling" in self.model else "Pixverse"
+                    if "tmappdev" in self.model:
+                        model_name = "tmappdev"
+                    elif "kling" in self.model:
+                        model_name = "Kling"
+                    else:
+                        model_name = "Pixverse"
                     raise Exception(f"{model_name} lipsync timed out after {timeout_seconds//60} minutes. Lipsync may have failed on Replicate's side.")
+                except Exception as e:
+                    logger.error(f"Replicate call failed with error: {type(e).__name__}: {e}")
+                    raise
 
             if progress_callback:
                 progress_callback(f"Lipsync complete, downloading...", 50)

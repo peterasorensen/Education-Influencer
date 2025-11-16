@@ -168,6 +168,22 @@ class ImageToVideoGenerator:
 
                 logger.info(f"Video saved to {output_path}")
 
+                # Validate downloaded video
+                if output_path.exists():
+                    file_size = output_path.stat().st_size
+                    logger.info(f"Downloaded video size: {file_size} bytes ({file_size/1024/1024:.2f} MB)")
+
+                    # Check video file header
+                    with open(output_path, 'rb') as f:
+                        header = f.read(12)
+                        logger.info(f"Video file header: {header.hex()}")
+                        if b'ftyp' in header:
+                            logger.info("Video file appears to be valid MP4")
+                        else:
+                            logger.warning("Video file may not be valid MP4 - 'ftyp' signature not found")
+                else:
+                    logger.error(f"Video file was not created at {output_path}")
+
                 if progress_callback:
                     progress_callback(f"Video generation complete", 100)
 
@@ -194,6 +210,22 @@ class ImageToVideoGenerator:
                     f.write(response.content)
 
             logger.info(f"Video saved to {output_path}")
+
+            # Validate downloaded video
+            if output_path.exists():
+                file_size = output_path.stat().st_size
+                logger.info(f"Downloaded video size: {file_size} bytes ({file_size/1024/1024:.2f} MB)")
+
+                # Check video file header
+                with open(output_path, 'rb') as f:
+                    header = f.read(12)
+                    logger.info(f"Video file header: {header.hex()}")
+                    if b'ftyp' in header:
+                        logger.info("Video file appears to be valid MP4")
+                    else:
+                        logger.warning("Video file may not be valid MP4 - 'ftyp' signature not found")
+            else:
+                logger.error(f"Video file was not created at {output_path}")
 
             # Save URL to metadata file for debugging
             metadata_file = output_path.parent / f"{output_path.stem}_replicate_url.txt"
