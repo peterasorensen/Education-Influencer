@@ -1,0 +1,60 @@
+{
+  "segments": [
+    {
+      "id": 0,
+      "text": "Let's explore Einstein's famous equation E equals M C squared",
+      "start": 0.0,
+      "end": 5.0,
+      "words": [
+        {"word": "Let's", "start": 0.0, "end": 0.3},
+        {"word": "explore", "start": 0.4, "end": 0.9},
+        {"word": "Einstein's", "start": 1.0, "end": 1.6},
+        {"word": "famous", "start": 1.7, "end": 2.1},
+        {"word": "equation", "start": 2.2, "end": 2.8},
+        {"word": "E", "start": 3.0, "end": 3.2},
+        {"word": "equals", "start": 3.3, "end": 3.7},
+        {"word": "M", "start": 3.8, "end": 4.0},
+        {"word": "C", "start": 4.1, "end": 4.3},
+        {"word": "squared", "start": 4.4, "end": 4.9}
+      ]
+    },
+    {
+      "id": 1,
+      "text": "E represents energy, M is mass, and C is the speed of light",
+      "start": 5.0,
+      "end": 10.0,
+      "words": [
+        {"word": "E", "start": 5.0, "end": 5.2},
+        {"word": "represents", "start": 5.3, "end": 5.9},
+        {"word": "energy", "start": 6.0, "end": 6.5},
+        {"word": "M", "start": 6.6, "end": 6.8},
+        {"word": "is", "start": 6.9, "end": 7.0},
+        {"word": "mass", "start": 7.1, "end": 7.4},
+        {"word": "and", "start": 7.5, "end": 7.7},
+        {"word": "C", "start": 7.8, "end": 8.0},
+        {"word": "is", "start": 8.1, "end": 8.2},
+        {"word": "the", "start": 8.3, "end": 8.4},
+        {"word": "speed", "start": 8.5, "end": 8.8},
+        {"word": "of", "start": 8.9, "end": 9.0},
+        {"word": "light", "start": 9.1, "end": 9.5}
+      ]
+    },
+    {
+      "id": 2,
+      "text": "This equation shows that mass and energy are interchangeable",
+      "start": 10.0,
+      "end": 15.0,
+      "words": [
+        {"word": "This", "start": 10.0, "end": 10.3},
+        {"word": "equation", "start": 10.4, "end": 10.9},
+        {"word": "shows", "start": 11.0, "end": 11.3},
+        {"word": "that", "start": 11.4, "end": 11.6},
+        {"word": "mass", "start": 11.7, "end": 12.0},
+        {"word": "and", "start": 12.1, "end": 12.3},
+        {"word": "energy", "start": 12.4, "end": 12.9},
+        {"word": "are", "start": 13.0, "end": 13.2},
+        {"word": "interchangeable", "start": 13.3, "end": 14.5}
+      ]
+    }
+  ]
+}

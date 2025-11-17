@@ -31,6 +31,7 @@ class ScriptGenerator:
         topic: str,
         duration_seconds: int = 60,
         progress_callback: Optional[Callable[[str, int], None]] = None,
+        speaker_names: Optional[Dict[str, str]] = None,
     ) -> List[Dict[str, str]]:
         """
         Generate a multi-voice educational script.
@@ -39,6 +40,9 @@ class ScriptGenerator:
             topic: The educational topic to create a script about
             duration_seconds: Target duration in seconds
             progress_callback: Optional callback for progress updates
+            speaker_names: Optional dict with 'teacher' and 'student' names
+                          e.g., {"teacher": "Drake", "student": "Sydney"}
+                          Defaults to {"teacher": "Teacher", "student": "Student"}
 
         Returns:
             List of script segments with speaker and text
@@ -51,7 +55,14 @@ class ScriptGenerator:
             if progress_callback:
                 progress_callback("Generating conversational script...", 10)
 
-            system_prompt = """You are a world-class educator creating extraordinary learning experiences.
+            # Set speaker names
+            if speaker_names is None:
+                speaker_names = {"teacher": "Teacher", "student": "Student"}
+
+            teacher_name = speaker_names.get("teacher", "Teacher")
+            student_name = speaker_names.get("student", "Student")
+
+            system_prompt = f"""You are a world-class educator creating extraordinary learning experiences.
 
 Your mission: Explain concepts in a way that creates genuine "aha!" moments and builds deep, intuitive understanding.
 
@@ -78,23 +89,23 @@ PEDAGOGICAL PRINCIPLES (inspired by Grant Sanderson/3Blue1Brown, Sal Khan, Richa
    - Guide attention: "notice that...", "see how...", "look at..."
 
 5. CONVERSATIONAL & ENGAGING
-   - Use a dialogue format between Teacher (enthusiastic explainer) and Student (curious learner)
-   - Student asks authentic questions, provides "aha" moments, relates concepts to real life
+   - Use a dialogue format between {teacher_name} (enthusiastic explainer) and {student_name} (curious learner)
+   - {student_name} asks authentic questions, provides "aha" moments, relates concepts to real life
    - Natural, energetic tone - like an excited friend sharing something cool
 
 6. ANTICIPATE CONFUSION
    - Address common misconceptions directly
-   - Student asks clarifying questions at natural points of confusion
-   - Teacher validates questions and provides clear distinctions
+   - {student_name} asks clarifying questions at natural points of confusion
+   - {teacher_name} validates questions and provides clear distinctions
 
 DIALOGUE CHARACTERS:
-- Teacher: Clear, enthusiastic, uses analogies, builds step-by-step
-- Student: Curious, asks clarifying questions, provides "aha" moments, relates to real life
+- {teacher_name}: Clear, enthusiastic, uses analogies, builds step-by-step
+- {student_name}: Curious, asks clarifying questions, provides "aha" moments, relates to real life
 
 OUTPUT FORMAT (JSON):
 Return a JSON object with key "dialogue" containing an array of segments:
 [
-  {"speaker": "Teacher" or "Student", "text": "..."},
+  {{"speaker": "{teacher_name}" or "{student_name}", "text": "..."}},
   ...
 ]
 
@@ -112,25 +123,25 @@ CREATE AN EXTRAORDINARY LEARNING EXPERIENCE:
 Structure your dialogue like this:
 
 1. HOOK (Why this matters)
-   - Teacher: Start with a fascinating question or real-world connection
-   - Student: Express curiosity or share a relatable experience
+   - {teacher_name}: Start with a fascinating question or real-world connection
+   - {student_name}: Express curiosity or share a relatable experience
 
 2. BUILD FROM SIMPLE
-   - Teacher: Introduce the SIMPLEST possible example with concrete numbers/objects
+   - {teacher_name}: Introduce the SIMPLEST possible example with concrete numbers/objects
    - Use visual language: "Let's draw...", "Imagine...", "Picture this..."
 
 3. DEVELOP INTUITION
-   - Teacher: Use powerful analogies and visual metaphors
-   - Student: Ask clarifying questions, make connections
+   - {teacher_name}: Use powerful analogies and visual metaphors
+   - {student_name}: Ask clarifying questions, make connections
    - Build complexity gradually, one concept at a time
 
 4. AHA MOMENT
-   - Teacher: Reveal the key insight with enthusiasm
-   - Student: Express understanding with specific realization
+   - {teacher_name}: Reveal the key insight with enthusiasm
+   - {student_name}: Express understanding with specific realization
 
 5. REINFORCE & EXTEND
-   - Teacher: Show how the concept applies more broadly
-   - Student: Ask about extensions or applications
+   - {teacher_name}: Show how the concept applies more broadly
+   - {student_name}: Ask about extensions or applications
 
 VISUAL INTEGRATION:
 Every line should naturally reference visuals:

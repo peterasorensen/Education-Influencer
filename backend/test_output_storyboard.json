@@ -1,0 +1,84 @@
+{
+  "metadata": {
+    "topic": "Einstein's Mass-Energy Equivalence",
+    "duration": 5.0,
+    "num_scenes": 1
+  },
+  "scenes": [
+    {
+      "id": "scene_0",
+      "timestamp": {
+        "start": 0.0,
+        "end": 5.0
+      },
+      "narration": "Let's explore Einstein's famous equation E equals M C squared",
+      "visual_type": "equation",
+      "description": "Display Einstein's equation with synchronized highlights",
+      "elements": [
+        "Text",
+        "MathTex"
+      ],
+      "region": "center",
+      "cleanup": [],
+      "transitions": [
+        "FadeIn",
+        "Write"
+      ],
+      "properties": {
+        "font_size": 48,
+        "color": "BLUE"
+      },
+      "word_sync": [
+        {
+          "word": "Einstein's",
+          "time": 1.0,
+          "action": "flash",
+          "target": "title",
+          "description": "Animate title when 'Einstein's' is spoken"
+        },
+        {
+          "word": "famous",
+          "time": 1.7,
+          "action": "scale_pop",
+          "target": "title",
+          "description": "Animate title when 'famous' is spoken"
+        },
+        {
+          "word": "equation",
+          "time": 2.2,
+          "action": "circumscribe",
+          "target": "equation",
+          "description": "Animate equation when 'equation' is spoken"
+        },
+        {
+          "word": "E",
+          "time": 3.0,
+          "action": "indicate",
+          "target": "e_var",
+          "description": "Animate e_var when 'E' is spoken"
+        },
+        {
+          "word": "M",
+          "time": 3.8,
+          "action": "indicate",
+          "target": "m_var",
+          "description": "Animate m_var when 'M' is spoken"
+        },
+        {
+          "word": "C",
+          "time": 4.1,
+          "action": "indicate",
+          "target": "c_var",
+          "description": "Animate c_var when 'C' is spoken"
+        },
+        {
+          "word": "squared",
+          "time": 4.4,
+          "action": "wiggle",
+          "target": "exponent",
+          "description": "Animate exponent when 'squared' is spoken"
+        }
+      ]
+    }
+  ]
+}

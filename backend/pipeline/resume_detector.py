@@ -59,10 +59,14 @@ class ResumeDetector:
         # Check audio
         audio_path = self.job_dir / "narration.mp3"
         audio_dir = self.job_dir / "audio_segments"
+        voice_map_path = self.job_dir / "speaker_voice_map.json"
         if (audio_path.exists() and audio_path.stat().st_size > 0 and
             audio_dir.exists() and len(list(audio_dir.glob("segment_*.mp3"))) > 0):
             steps["audio"] = True
-            logger.info("✓ Audio found")
+            if voice_map_path.exists():
+                logger.info("✓ Audio found (with speaker voice map)")
+            else:
+                logger.info("✓ Audio found (legacy - no speaker voice map)")
 
         # Check timestamps
         srt_path = self.job_dir / "subtitles.srt"
@@ -191,12 +195,23 @@ class ResumeDetector:
                 logger.error(f"Failed to load storyboard: {e}")
         return None
 
+    def load_speaker_voice_map(self) -> Optional[Dict]:
+        """Load speaker-to-voice mapping from file if it exists."""
+        voice_map_path = self.job_dir / "speaker_voice_map.json"
+        if voice_map_path.exists():
+            try:
+                return json.loads(voice_map_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.error(f"Failed to load speaker voice map: {e}")
+        return None
+
     def get_paths(self) -> Dict[str, Path]:
         """Get all relevant file paths for the job."""
         return {
             "script": self.job_dir / "script.json",
             "audio": self.job_dir / "narration.mp3",
             "audio_segments": self.job_dir / "audio_segments",
+            "speaker_voice_map": self.job_dir / "speaker_voice_map.json",
             "srt": self.job_dir / "subtitles.srt",
             "visual_instructions": self.job_dir / "visual_instructions.json",  # Legacy
             "storyboard": self.job_dir / "storyboard.json",  # NEW

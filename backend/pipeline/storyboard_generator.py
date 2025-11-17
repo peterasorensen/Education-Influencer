@@ -40,19 +40,21 @@ class StoryboardGenerator:
         script: List[Dict[str, str]],
         topic: str,
         aligned_timestamps: Optional[List[Dict]] = None,
+        word_timestamps: Optional[Dict] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> Dict[str, Any]:
         """
-        Generate storyboard JSON from script with spatial tracking.
+        Generate storyboard JSON from script with spatial tracking and word-sync actions.
 
         Args:
             script: List of script segments with speaker and text
             topic: The educational topic
             aligned_timestamps: Optional list of script segments with timing
+            word_timestamps: Optional dict with word-level timing from Whisper
             progress_callback: Optional callback for progress updates
 
         Returns:
-            Storyboard dictionary with metadata and scenes
+            Storyboard dictionary with metadata, scenes, and word-sync actions
 
         Raises:
             Exception: If storyboard generation fails
@@ -70,7 +72,7 @@ class StoryboardGenerator:
                 last_segment = aligned_timestamps[-1]
                 total_duration = last_segment.get("end", 60.0)
 
-            system_prompt = """Generate a detailed storyboard JSON for an educational animation.
+            system_prompt = """Generate a detailed storyboard JSON for an educational animation with WORD-SYNCHRONIZED ANIMATIONS.
 
 OUTPUT FORMAT (REQUIRED):
 {
@@ -90,7 +92,12 @@ OUTPUT FORMAT (REQUIRED):
       "region": "center|top|bottom|top_left|etc",
       "cleanup": ["previous_object_ids"],
       "transitions": ["FadeIn", "Write"],
-      "properties": {"font_size": 36, "color": "BLUE"}
+      "properties": {"font_size": 36, "color": "BLUE"},
+      "word_sync": [
+        {"word": "equation", "time": 1.2, "action": "indicate", "target": "eq_main"},
+        {"word": "Einstein", "time": 2.1, "action": "flash", "target": "title"},
+        {"word": "energy", "time": 3.5, "action": "circumscribe", "target": "e_var"}
+      ]
     }
   ]
 }
@@ -110,15 +117,60 @@ CLEANUP: List IDs of objects to remove before this scene
 TRANSITIONS: Animation types (FadeIn, Write, Create, Transform)
 ELEMENTS: Manim objects to use (MathTex, Text, Circle, etc.)
 
+WORD-SYNC ACTIONS (CRITICAL FOR ENGAGEMENT):
+Use word-level timestamps to create DYNAMIC, SYNCHRONIZED animations that POP!
+
+Available actions:
+- "indicate": Pulse/scale effect when word is spoken (great for emphasis)
+- "flash": Bright flash effect (use for "look at this!")
+- "circumscribe": Draw circle/box around object (highlight important parts)
+- "wiggle": Small wiggle motion (playful emphasis)
+- "focus": Brief zoom focus effect (direct attention)
+- "color_pulse": Temporary color change (visual variety)
+- "scale_pop": Quick scale up and down (makes it POP!)
+- "write_word": Write text word-by-word as spoken (perfect sync)
+
+WORD-SYNC STRATEGY:
+1. When narration mentions a mathematical term → indicate/circumscribe the equation
+2. When introducing a concept → flash or scale_pop the title/object
+3. When saying "this" or "here" → focus/indicate the referenced object
+4. When listing items → indicate each item as it's spoken
+5. When emphasizing → use flash or color_pulse
+6. For step-by-step explanations → write_word to reveal text progressively
+
+Example: "Einstein's famous equation E equals M C squared"
+- "Einstein" → flash portrait/title
+- "equation" → circumscribe equation
+- "E" → indicate E variable
+- "equals" → indicate equals sign
+- "M" → indicate M variable
+- "C" → indicate C variable
+- "squared" → indicate exponent with scale_pop
+
 Return valid JSON with "metadata" and "scenes" keys."""
+
+            # Format word timestamps if available
+            word_sync_info = ""
+            if word_timestamps and "segments" in word_timestamps:
+                word_sync_info = "\n\nWORD-LEVEL TIMESTAMPS (use these for word_sync actions):\n"
+                for seg in word_timestamps["segments"][:5]:  # Show first 5 segments as examples
+                    if "words" in seg and seg["words"]:
+                        word_sync_info += f"\nSegment {seg.get('id', 0)}: \"{seg.get('text', '')}\"\n"
+                        for w in seg["words"][:10]:  # Show up to 10 words per segment
+                            word_sync_info += f"  - \"{w.get('word', '')}\" at {w.get('start', 0):.2f}s\n"
 
             user_prompt = f"""Topic: {topic}
 Duration: {total_duration:.1f}s
 
 Script:
 {script_text}
+{word_sync_info}
 
-Generate storyboard JSON. Match visuals to narration. Use proper regions and cleanup."""
+CRITICAL: Generate storyboard JSON with word_sync actions to make animations POP!
+- Match visuals to narration
+- Use proper regions and cleanup
+- Add word_sync array for EACH scene with at least 2-4 synchronized actions
+- Make animations DYNAMIC and ENGAGING by syncing to specific words being spoken"""
 
             logger.info(f"Generating storyboard for: {topic}")
 
@@ -188,6 +240,7 @@ Generate storyboard JSON. Match visuals to narration. Use proper regions and cle
                 "cleanup": scene.get("cleanup", []),
                 "transitions": scene.get("transitions", ["FadeIn"]),
                 "properties": scene.get("properties", {}),
+                "word_sync": scene.get("word_sync", []),  # NEW: Word-synchronized actions
             }
 
             # Add timestamps

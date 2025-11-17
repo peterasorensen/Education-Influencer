@@ -32,43 +32,61 @@ class TimestampExtractor:
         self,
         audio_path: Path,
         output_srt_path: Optional[Path] = None,
+        output_word_timestamps_path: Optional[Path] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> Dict:
         """
-        Extract timestamps from audio file using Whisper.
+        Extract timestamps from audio file using Whisper with WORD-LEVEL granularity.
 
         Args:
             audio_path: Path to the audio file
             output_srt_path: Optional path to save SRT subtitle file
+            output_word_timestamps_path: Optional path to save word-level timestamps JSON
             progress_callback: Optional callback for progress updates
 
         Returns:
             Dictionary containing:
             - text: Full transcription text
-            - segments: List of timed segments with text
+            - segments: List of timed segments with text and word-level timestamps
             - srt: SRT-formatted subtitle text
             - duration: Total audio duration in seconds
+            - word_timestamps: Detailed word-level timing data
 
         Raises:
             Exception: If timestamp extraction fails
         """
         try:
             if progress_callback:
-                progress_callback("Extracting timestamps with Whisper...", 45)
+                progress_callback("Extracting word-level timestamps with Whisper...", 45)
 
             logger.info(f"Processing audio file: {audio_path}")
 
-            # Open and transcribe audio file
+            # Open and transcribe audio file with WORD-LEVEL timestamps
             with open(audio_path, "rb") as audio_file:
-                response = await self.client.audio.transcriptions.create(
-                    model=self.model,
-                    file=audio_file,
-                    response_format="verbose_json",
-                )
+                try:
+                    # Try with word-level timestamps (requires openai>=1.14.0)
+                    response = await self.client.audio.transcriptions.create(
+                        model=self.model,
+                        file=audio_file,
+                        response_format="verbose_json",
+                        timestamp_granularities=["word", "segment"],  # CRITICAL: Enable word-level timestamps
+                    )
+                except TypeError as e:
+                    if "timestamp_granularities" in str(e):
+                        logger.warning("Word-level timestamps not supported (openai library too old). Please upgrade: pip install openai>=1.14.0")
+                        logger.warning("Falling back to segment-level timestamps only...")
+                        # Fallback to segment-level only (works with older openai versions)
+                        response = await self.client.audio.transcriptions.create(
+                            model=self.model,
+                            file=audio_file,
+                            response_format="verbose_json",
+                        )
+                    else:
+                        raise
 
-            logger.info("Whisper transcription complete")
+            logger.info("Whisper transcription complete with word-level timestamps")
 
-            # Extract segments with timestamps
+            # Extract segments with timestamps AND word-level data
             segments = []
             if hasattr(response, 'segments') and response.segments:
                 for idx, segment in enumerate(response.segments):
@@ -77,12 +95,27 @@ class TimestampExtractor:
                     end = segment.get("end") if isinstance(segment, dict) else segment.end
                     text = segment.get("text") if isinstance(segment, dict) else segment.text
 
+                    # Extract word-level timestamps for this segment
+                    words = []
+                    if isinstance(segment, dict) and "words" in segment:
+                        words = segment["words"]
+                    elif hasattr(segment, "words") and segment.words:
+                        words = [
+                            {
+                                "word": w.word if hasattr(w, "word") else w.get("word"),
+                                "start": w.start if hasattr(w, "start") else w.get("start"),
+                                "end": w.end if hasattr(w, "end") else w.get("end"),
+                            }
+                            for w in segment.words
+                        ]
+
                     segments.append(
                         {
                             "id": idx,
                             "start": start,
                             "end": end,
                             "text": text.strip(),
+                            "words": words,  # NEW: Word-level timestamps
                         }
                     )
             else:
@@ -94,10 +127,11 @@ class TimestampExtractor:
                         "start": 0.0,
                         "end": 60.0,  # Default 60 seconds
                         "text": response.text.strip() if hasattr(response, 'text') else "",
+                        "words": [],  # No word-level data in fallback
                     }
                 )
 
-            # Generate SRT content
+            # Generate SRT content (segment-level subtitles)
             srt_content = self._generate_srt(segments)
 
             # Save SRT file if path provided
@@ -108,6 +142,20 @@ class TimestampExtractor:
                 )
                 logger.info(f"SRT subtitles saved to {output_srt_path}")
 
+            # Save word-level timestamps JSON if path provided
+            if output_word_timestamps_path:
+                import json
+                word_timestamps_data = {
+                    "segments": segments  # Already includes word-level data
+                }
+                output_word_timestamps_path.parent.mkdir(parents=True, exist_ok=True)
+                await asyncio.to_thread(
+                    output_word_timestamps_path.write_text,
+                    json.dumps(word_timestamps_data, indent=2, ensure_ascii=False),
+                    encoding="utf-8"
+                )
+                logger.info(f"Word-level timestamps saved to {output_word_timestamps_path}")
+
             # Extract full text from response
             full_text = ""
             if hasattr(response, 'text'):
@@ -116,19 +164,23 @@ class TimestampExtractor:
                 # Concatenate all segment texts
                 full_text = " ".join(seg["text"] for seg in segments)
 
+            # Count total words extracted
+            total_words = sum(len(seg.get("words", [])) for seg in segments)
+
             result = {
                 "text": full_text,
                 "segments": segments,
                 "srt": srt_content,
                 "duration": segments[-1]["end"] if segments else 0,
+                "word_count": total_words,  # NEW: Total word count
             }
 
             if progress_callback:
                 progress_callback(
-                    f"Extracted {len(segments)} timestamp segments", 50
+                    f"Extracted {len(segments)} segments with {total_words} words", 50
                 )
 
-            logger.info(f"Extracted {len(segments)} segments, duration: {result['duration']:.2f}s")
+            logger.info(f"Extracted {len(segments)} segments with {total_words} word-level timestamps, duration: {result['duration']:.2f}s")
 
             return result
 
@@ -271,6 +323,52 @@ class TimestampExtractor:
         except Exception as e:
             logger.error(f"Script alignment failed: {e}")
             raise Exception(f"Failed to align script with timestamps: {e}")
+
+    def extract_key_words_for_animation(self, segments: List[Dict]) -> List[Dict]:
+        """
+        Extract key words from segments for animation synchronization.
+        Identifies important words (nouns, verbs, adjectives) that should trigger animations.
+
+        Args:
+            segments: List of segments with word-level timestamps
+
+        Returns:
+            List of key words with timing and suggested animation actions:
+            [{"word": "Einstein", "time": 1.2, "segment_id": 0, "type": "noun"}, ...]
+        """
+        import re
+
+        # Keywords that typically warrant animation emphasis
+        important_word_patterns = [
+            r'\b[A-Z][a-z]+',  # Proper nouns (capitalized words)
+            r'\b(equation|formula|theory|concept|principle|law|rule|function|variable|constant)\b',  # Math/science terms
+            r'\b(increase|decrease|grow|shrink|expand|contract|transform|change|shift|rotate|move)\b',  # Action verbs
+            r'\b(important|critical|key|main|central|essential|fundamental|significant)\b',  # Emphasis adjectives
+            r'\b(first|second|third|finally|next|then|now|here|this|that)\b',  # Sequence/reference words
+        ]
+
+        key_words = []
+        for segment in segments:
+            segment_id = segment.get("id", 0)
+            words = segment.get("words", [])
+
+            for word_data in words:
+                word_text = word_data.get("word", "").strip()
+                word_start = word_data.get("start", 0.0)
+
+                # Check if word matches any important pattern
+                for pattern in important_word_patterns:
+                    if re.search(pattern, word_text, re.IGNORECASE):
+                        key_words.append({
+                            "word": word_text,
+                            "time": word_start,
+                            "segment_id": segment_id,
+                            "pattern_matched": pattern
+                        })
+                        break
+
+        logger.info(f"Extracted {len(key_words)} key words for animation sync")
+        return key_words
 
     def parse_srt_file(self, srt_path: Path) -> List[Dict]:
         """

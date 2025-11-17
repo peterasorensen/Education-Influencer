@@ -74,6 +74,12 @@ REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 if not REPLICATE_API_TOKEN:
     logger.warning("REPLICATE_API_TOKEN not set. Celebrity video generation will fail.")
 
+AUDIO_MODEL = os.getenv("AUDIO_MODEL")
+if AUDIO_MODEL:
+    logger.info(f"Using custom audio model: {AUDIO_MODEL}")
+else:
+    logger.info("Using default OpenAI TTS for audio generation")
+
 # Output directories
 BASE_OUTPUT_DIR = Path("./output")
 BASE_OUTPUT_DIR.mkdir(exist_ok=True)
@@ -81,8 +87,12 @@ BASE_OUTPUT_DIR.mkdir(exist_ok=True)
 # Celebrity assets
 ASSETS_DIR = Path("./assets")
 CELEBRITY_IMAGES = {
-    "drake": ASSETS_DIR / "drake.jpg",
-    "sydney_sweeney": ASSETS_DIR / "sydneysweeney.png",
+    "drake": ASSETS_DIR / "drake" / "drake.jpg",
+    "sydney_sweeney": ASSETS_DIR / "sydneysweeney" / "sydneysweeney.png",
+}
+CELEBRITY_AUDIO_SAMPLES = {
+    "drake": ASSETS_DIR / "drake" / "drake.mp3",
+    "sydney_sweeney": ASSETS_DIR / "sydneysweeney" / "sydneysweeney.mp3",
 }
 
 
@@ -440,7 +450,12 @@ async def generate_video_pipeline(
 
         # Initialize pipeline modules
         script_gen = ScriptGenerator(OPENAI_API_KEY)
-        audio_gen = AudioGenerator(OPENAI_API_KEY)
+        audio_gen = AudioGenerator(
+            api_key=OPENAI_API_KEY,
+            replicate_token=REPLICATE_API_TOKEN,
+            audio_model=AUDIO_MODEL,
+            celebrity_audio_samples=CELEBRITY_AUDIO_SAMPLES,
+        )
         timestamp_ext = TimestampExtractor(OPENAI_API_KEY)
         visual_gen = VisualScriptGenerator(OPENAI_API_KEY)  # Legacy - for backward compatibility
         storyboard_gen = StoryboardGenerator(OPENAI_API_KEY)  # NEW
@@ -470,9 +485,18 @@ async def generate_video_pipeline(
             await send_progress_update(job_id, "Script loaded from cache", 10)
         else:
             await send_progress_update(job_id, "Generating script...", 5)
+
+            # Use celebrity names as speakers instead of "Teacher"/"Student"
+            # Drake and Sydney Sweeney have a conversation
+            speaker_names = {
+                "teacher": "Drake",
+                "student": "Sydney"
+            }
+
             script = await script_gen.generate_script(
                 topic=topic,
                 duration_seconds=duration_seconds,
+                speaker_names=speaker_names,
                 progress_callback=lambda msg, prog: asyncio.create_task(
                     send_progress_update(job_id, msg, prog)
                 ),
@@ -487,6 +511,16 @@ async def generate_video_pipeline(
         final_audio_path = job_dir / "narration.mp3"
         if completed_steps.get("audio"):
             logger.info("⏩ Skipping audio generation (already completed)")
+
+            # Load speaker voice map for resume functionality
+            voice_map_path = job_dir / "speaker_voice_map.json"
+            if voice_map_path.exists():
+                try:
+                    audio_gen.speaker_voice_map = json.loads(voice_map_path.read_text())
+                    logger.info(f"Loaded speaker voice map: {audio_gen.speaker_voice_map}")
+                except Exception as e:
+                    logger.warning(f"Failed to load speaker voice map: {e}")
+
             await send_progress_update(job_id, "Audio loaded from cache", 25)
         else:
             await send_progress_update(job_id, "Generating audio...", 20)
@@ -717,32 +751,42 @@ async def generate_video_pipeline(
                 speaker = script[idx]["speaker"]
                 logger.info(f"Segment {idx}: Speaker from script = '{speaker}'")
 
-                # Map speaker to celebrity based on the assigned voice
-                # Check the voice assigned to this speaker in audio_gen.speaker_voice_map
-                assigned_voice = audio_gen.speaker_voice_map.get(speaker, "unknown")
-                logger.info(f"Segment {idx}: Speaker '{speaker}' has voice '{assigned_voice}'")
-
-                # Map voices to celebrities:
-                # - Male voices (onyx, echo, fable) -> Drake
-                # - Female voices (nova, shimmer, alloy) -> Sydney Sweeney
-                male_voices = ["onyx", "echo", "fable"]
-                female_voices = ["nova", "shimmer", "alloy"]
-
-                if assigned_voice in male_voices:
+                # Map speaker to celebrity
+                # Priority 1: Direct name matching (if speaker is "Drake" or "Sydney")
+                speaker_lower = speaker.lower()
+                if "drake" in speaker_lower:
                     segment_celebrity_image = CELEBRITY_IMAGES["drake"]
-                    logger.info(f"Segment {idx}: Using Drake for {speaker} (voice: {assigned_voice})")
-                elif assigned_voice in female_voices:
+                    logger.info(f"Segment {idx}: Using Drake (matched speaker name '{speaker}')")
+                elif "sydney" in speaker_lower:
                     segment_celebrity_image = CELEBRITY_IMAGES["sydney_sweeney"]
-                    logger.info(f"Segment {idx}: Using Sydney Sweeney for {speaker} (voice: {assigned_voice})")
+                    logger.info(f"Segment {idx}: Using Sydney Sweeney (matched speaker name '{speaker}')")
                 else:
-                    # Fallback: alternate based on segment index (even = Drake, odd = Sydney)
-                    # This works well for multi-person conversations when voice is unknown
-                    if idx % 2 == 0:
+                    # Priority 2: Map based on assigned voice (backward compatibility)
+                    # Check the voice assigned to this speaker in audio_gen.speaker_voice_map
+                    assigned_voice = audio_gen.speaker_voice_map.get(speaker, "unknown")
+                    logger.info(f"Segment {idx}: Speaker '{speaker}' has voice '{assigned_voice}'")
+
+                    # Map voices to celebrities:
+                    # - Male voices (onyx, echo, fable) -> Drake
+                    # - Female voices (nova, shimmer, alloy) -> Sydney Sweeney
+                    male_voices = ["onyx", "echo", "fable"]
+                    female_voices = ["nova", "shimmer", "alloy"]
+
+                    if assigned_voice in male_voices:
                         segment_celebrity_image = CELEBRITY_IMAGES["drake"]
-                        logger.info(f"Segment {idx}: Using Drake for {speaker} (fallback: even index)")
-                    else:
+                        logger.info(f"Segment {idx}: Using Drake for {speaker} (voice: {assigned_voice})")
+                    elif assigned_voice in female_voices:
                         segment_celebrity_image = CELEBRITY_IMAGES["sydney_sweeney"]
-                        logger.info(f"Segment {idx}: Using Sydney Sweeney for {speaker} (fallback: odd index)")
+                        logger.info(f"Segment {idx}: Using Sydney Sweeney for {speaker} (voice: {assigned_voice})")
+                    else:
+                        # Fallback: alternate based on segment index (even = Drake, odd = Sydney)
+                        # This works well for multi-person conversations when voice is unknown
+                        if idx % 2 == 0:
+                            segment_celebrity_image = CELEBRITY_IMAGES["drake"]
+                            logger.info(f"Segment {idx}: Using Drake for {speaker} (fallback: even index)")
+                        else:
+                            segment_celebrity_image = CELEBRITY_IMAGES["sydney_sweeney"]
+                            logger.info(f"Segment {idx}: Using Sydney Sweeney for {speaker} (fallback: odd index)")
 
                 # Use varied prompts for natural variety
                 prompts = [

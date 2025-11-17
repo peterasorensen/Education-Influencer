@@ -46,7 +46,8 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env and add:
 # - OPENAI_API_KEY (required)
-# - REPLICATE_API_TOKEN (required for celebrity videos)
+# - REPLICATE_API_TOKEN (required for celebrity videos and Tortoise TTS)
+# - AUDIO_MODEL (optional, for voice cloning with Tortoise TTS)
 ```
 
 Get API keys:
@@ -86,8 +87,12 @@ backend/
 │   ├── video_stitcher.py            # Video compositing & stitching
 │   └── resume_detector.py           # Resume from failed jobs
 ├── assets/
-│   ├── drake.jpg                    # Celebrity images
-│   └── sydneysweeney.png
+│   ├── drake/                        # Drake assets
+│   │   ├── drake.jpg                 # Drake image
+│   │   └── drake.mp3                 # Drake audio sample for voice cloning
+│   └── sydneysweeney/                # Sydney Sweeney assets
+│       ├── sydneysweeney.png         # Sydney Sweeney image
+│       └── sydneysweeney.mp3         # Sydney Sweeney audio sample for voice cloning
 ├── requirements.txt
 └── .env.example
 ```
@@ -102,6 +107,8 @@ backend/
 
 2. **Audio Generation** (15-35%)
    - Generate audio for each character with different TTS voices
+   - Supports OpenAI TTS (default) or Tortoise TTS for voice cloning
+   - Tortoise TTS uses celebrity audio samples for voice cloning
    - Combine segments with appropriate silence
 
 3. **Timestamp Extraction** (35-45%)
@@ -304,12 +311,33 @@ while True:
 
 ## Voice Configuration
 
-The system uses different OpenAI TTS voices for each character:
+The system supports two audio generation methods:
+
+### OpenAI TTS (Default)
+
+Uses different OpenAI TTS voices for each character:
 
 - **Alex** (boy): `onyx` voice - deep, warm
 - **Maya** (girl): `nova` voice - friendly, clear
 
 Available OpenAI TTS voices: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`
+
+### Tortoise TTS (Optional Voice Cloning)
+
+For voice cloning using celebrity audio samples, set the `AUDIO_MODEL` environment variable:
+
+```bash
+AUDIO_MODEL=ttsds/tortoise:274f7fd0812bba7717154110a0ffd2930db847135ab234e23a9d7c35924b8a09
+```
+
+**How it works:**
+- Automatically maps speakers to celebrity audio samples based on assigned voice
+- Male voices (`onyx`, `echo`, `fable`) → Drake's voice using `assets/drake/drake.mp3`
+- Female voices (`nova`, `shimmer`, `alloy`) → Sydney Sweeney's voice using `assets/sydneysweeney/sydneysweeney.mp3`
+- Falls back to OpenAI TTS if Tortoise generation fails
+- Requires `REPLICATE_API_TOKEN` to be set
+
+**Note:** Tortoise TTS is slower and more expensive than OpenAI TTS, but produces more realistic voice cloning
 
 ## Video Output Format
 

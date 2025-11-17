@@ -1,0 +1,62 @@
+{
+  "segments": [
+    {
+      "id": 0,
+      "text": "Let's explore Einstein's famous equation E equals M C squared",
+      "start": 0.0,
+      "end": 5.0,
+      "words": [
+        {
+          "word": "Let's",
+          "start": 0.0,
+          "end": 0.3
+        },
+        {
+          "word": "explore",
+          "start": 0.4,
+          "end": 0.9
+        },
+        {
+          "word": "Einstein's",
+          "start": 1.0,
+          "end": 1.6
+        },
+        {
+          "word": "famous",
+          "start": 1.7,
+          "end": 2.1
+        },
+        {
+          "word": "equation",
+          "start": 2.2,
+          "end": 2.8
+        },
+        {
+          "word": "E",
+          "start": 3.0,
+          "end": 3.2
+        },
+        {
+          "word": "equals",
+          "start": 3.3,
+          "end": 3.7
+        },
+        {
+          "word": "M",
+          "start": 3.8,
+          "end": 4.0
+        },
+        {
+          "word": "C",
+          "start": 4.1,
+          "end": 4.3
+        },
+        {
+          "word": "squared",
+          "start": 4.4,
+          "end": 4.9
+        }
+      ]
+    }
+  ]
+}

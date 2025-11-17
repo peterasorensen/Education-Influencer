@@ -1,0 +1,149 @@
+{
+  "metadata": {
+    "topic": "Einstein's Mass-Energy Equivalence",
+    "duration": 15.0,
+    "num_scenes": 3
+  },
+  "scenes": [
+    {
+      "id": "scene_0",
+      "timestamp": {"start": 0.0, "end": 5.0},
+      "narration": "Let's explore Einstein's famous equation E equals M C squared",
+      "visual_type": "title",
+      "description": "Display title and Einstein's name with engaging entrance",
+      "elements": ["Text", "MathTex"],
+      "region": "center",
+      "cleanup": [],
+      "transitions": ["FadeIn", "Write"],
+      "properties": {"font_size": 48, "color": "BLUE"},
+      "word_sync": [
+        {
+          "word": "Einstein's",
+          "time": 1.2,
+          "action": "flash",
+          "target": "title",
+          "description": "Flash the title when Einstein is mentioned"
+        },
+        {
+          "word": "famous",
+          "time": 1.8,
+          "action": "scale_pop",
+          "target": "title",
+          "description": "Make title pop when 'famous' is said"
+        },
+        {
+          "word": "equation",
+          "time": 2.5,
+          "action": "circumscribe",
+          "target": "equation",
+          "description": "Highlight the equation with a box"
+        }
+      ]
+    },
+    {
+      "id": "scene_1",
+      "timestamp": {"start": 5.0, "end": 10.0},
+      "narration": "E represents energy, M is mass, and C is the speed of light",
+      "visual_type": "equation",
+      "description": "Break down each component of the equation with synchronized highlights",
+      "elements": ["MathTex"],
+      "region": "center",
+      "cleanup": ["title"],
+      "transitions": ["Transform"],
+      "properties": {"font_size": 60, "color": "WHITE"},
+      "word_sync": [
+        {
+          "word": "E",
+          "time": 5.5,
+          "action": "indicate",
+          "target": "e_var",
+          "description": "Pulse E when mentioned"
+        },
+        {
+          "word": "energy",
+          "time": 5.8,
+          "action": "color_pulse",
+          "target": "e_var",
+          "description": "Color pulse E with 'energy'"
+        },
+        {
+          "word": "M",
+          "time": 6.5,
+          "action": "indicate",
+          "target": "m_var",
+          "description": "Pulse M when mentioned"
+        },
+        {
+          "word": "mass",
+          "time": 6.8,
+          "action": "wiggle",
+          "target": "m_var",
+          "description": "Wiggle M with 'mass'"
+        },
+        {
+          "word": "C",
+          "time": 7.8,
+          "action": "indicate",
+          "target": "c_var",
+          "description": "Pulse C when mentioned"
+        },
+        {
+          "word": "speed",
+          "time": 8.2,
+          "action": "circumscribe",
+          "target": "c_var",
+          "description": "Circle C for emphasis"
+        },
+        {
+          "word": "light",
+          "time": 8.6,
+          "action": "flash",
+          "target": "c_var",
+          "description": "Flash C with light reference"
+        }
+      ]
+    },
+    {
+      "id": "scene_2",
+      "timestamp": {"start": 10.0, "end": 15.0},
+      "narration": "This equation shows that mass and energy are interchangeable",
+      "visual_type": "diagram",
+      "description": "Show transformation between mass and energy with animated arrows",
+      "elements": ["Circle", "Arrow", "Text"],
+      "region": "center",
+      "cleanup": [],
+      "transitions": ["Create", "GrowArrow"],
+      "properties": {"color": "YELLOW"},
+      "word_sync": [
+        {
+          "word": "This",
+          "time": 10.2,
+          "action": "focus",
+          "target": "equation",
+          "description": "Focus on equation when 'this' is said"
+        },
+        {
+          "word": "mass",
+          "time": 11.5,
+          "action": "indicate",
+          "target": "mass_circle",
+          "description": "Indicate mass representation"
+        },
+        {
+          "word": "energy",
+          "time": 12.2,
+          "action": "indicate",
+          "target": "energy_circle",
+          "description": "Indicate energy representation"
+        },
+        {
+          "word": "interchangeable",
+          "time": 13.0,
+          "action": "wiggle",
+          "target": "arrow",
+          "description": "Wiggle arrow to show interchange"
+        }
+      ]
+    }
+  ]
+}

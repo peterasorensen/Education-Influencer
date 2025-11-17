@@ -200,32 +200,46 @@ wrapped = wrap_text("This is a long sentence that might overflow the canvas boun
 text = Text(wrapped, font_size=36)
 ```
 
-SPATIAL AWARENESS (PREVENT OVERLAPS):
-Track object positions and check for overlaps before placing:
+SPATIAL AWARENESS (MANDATORY - PREVENT OVERLAPS):
+CRITICAL: Helper functions will be automatically injected into your code.
+You MUST use place_object_safe() for ALL object placement.
+
 ```python
-# Keep a list of placed objects with their bounding boxes
-placed_objects = []
+# These functions are AUTOMATICALLY available (don't redefine them):
+# - placed_objects = []  (global list tracking all objects)
+# - is_position_clear(x, y, width, height, buffer=0.3)
+# - place_object_safe(obj, x, y, width, height)
+# - remove_object_tracking(obj)
 
-# Before creating a new object, check if position is clear
-def is_position_clear(x, y, width, height):
-    for obj_bbox in placed_objects:
-        # Check if bounding boxes overlap
-        if (abs(x - obj_bbox['x']) < (width + obj_bbox['width']) / 2 and
-            abs(y - obj_bbox['y']) < (height + obj_bbox['height']) / 2):
-            return False
-    return True
+# MANDATORY: Use place_object_safe() instead of obj.move_to()
+# BAD (will cause overlaps):
+title = Text(wrap_text("Introduction", font_size=48), font_size=48)
+title.move_to(np.array([0, 3.5, 0]))  # WRONG - no tracking!
 
-# When placing an object, register it
-def place_object(obj, x, y, width, height):
-    obj.move_to(np.array([x, y, 0]))
-    placed_objects.append({'x': x, 'y': y, 'width': width, 'height': height, 'obj': obj})
-    return obj
+# GOOD (enforces boundaries and tracks position):
+title = Text(wrap_text("Introduction", font_size=48), font_size=48)
+place_object_safe(title, 0, 3.5, 4.0, 0.8)  # Automatically clamps and tracks!
 
-# Use this when creating objects
-if is_position_clear(0, 2, 4, 1):
-    title = Text(wrap_text("Introduction", font_size=48), font_size=48)
-    place_object(title, 0, 2, 4, 1)
+# When removing objects, update tracking:
+self.play(FadeOut(title))
+remove_object_tracking(title)
+self.remove(title)
+
+# Optional: Check if position is clear before creating complex objects
+if is_position_clear(0, 0, 3, 2):
+    diagram = VGroup(...)  # Create diagram
+    place_object_safe(diagram, 0, 0, 3, 2)
+else:
+    # Find alternative position or skip
+    pass
 ```
+
+CRITICAL RULES:
+1. ALWAYS use place_object_safe() instead of .move_to()
+2. ALWAYS wrap text with wrap_text() before creating Text objects
+3. ALWAYS remove_object_tracking() before FadeOut/self.remove()
+4. NEVER use .to_edge() or .to_corner() (will go off-screen on 9:8 canvas)
+5. NEVER use direct .move_to() without place_object_safe()
 
 POSITIONING GUIDELINES FOR 9:8 CANVAS:
 - Top region: y = 3.5 to 4.5 (use for titles)
@@ -276,6 +290,137 @@ duration = instruction["timestamp"]["end"] - instruction["timestamp"]["start"]
 self.play(Animation, run_time=duration)
 elapsed_time += duration
 ```
+
+WORD-SYNCHRONIZED ANIMATIONS (CRITICAL FOR ENGAGEMENT - MAKES ANIMATIONS POP!):
+You will receive word_sync data showing EXACTLY when each word is spoken.
+Use these to create DYNAMIC, SYNCHRONIZED animations that engage viewers!
+
+Helper function for word-sync timing:
+```python
+def sync_to_word(self, target_time, elapsed_time):
+    '''Wait until target word time, play sync animation, return updated time'''
+    if target_time > elapsed_time:
+        self.wait(target_time - elapsed_time)
+    return target_time
+```
+
+Word-sync actions mapping:
+```python
+# "indicate" - Pulse/scale effect (MOST COMMON - use for any emphasis)
+elapsed_time = sync_to_word(word_time, elapsed_time)
+self.play(Indicate(target_object, scale_factor=1.3), run_time=0.4)
+elapsed_time += 0.4
+
+# "flash" - Bright flash effect (great for "look at this!")
+elapsed_time = sync_to_word(word_time, elapsed_time)
+self.play(Flash(target_object, color=YELLOW, line_length=0.5), run_time=0.3)
+elapsed_time += 0.3
+
+# "circumscribe" - Draw attention box (highlight important parts)
+elapsed_time = sync_to_word(word_time, elapsed_time)
+self.play(Circumscribe(target_object, color=RED, fade_out=True), run_time=0.6)
+elapsed_time += 0.6
+
+# "wiggle" - Playful wiggle (fun emphasis)
+elapsed_time = sync_to_word(word_time, elapsed_time)
+self.play(Wiggle(target_object, scale_value=1.2), run_time=0.4)
+elapsed_time += 0.4
+
+# "focus" - Zoom focus effect (direct attention)
+elapsed_time = sync_to_word(word_time, elapsed_time)
+self.play(FocusOn(target_object), run_time=0.3)
+elapsed_time += 0.3
+
+# "color_pulse" - Temporary color change
+elapsed_time = sync_to_word(word_time, elapsed_time)
+original_color = target_object.get_color()
+self.play(target_object.animate.set_color(YELLOW), run_time=0.2)
+self.play(target_object.animate.set_color(original_color), run_time=0.2)
+elapsed_time += 0.4
+
+# "scale_pop" - Quick scale up/down (makes it POP!)
+elapsed_time = sync_to_word(word_time, elapsed_time)
+self.play(target_object.animate.scale(1.3), run_time=0.15)
+self.play(target_object.animate.scale(1/1.3), run_time=0.15)
+elapsed_time += 0.3
+
+# "write_word" - Write text word-by-word (perfect for progressive reveal)
+# Use AddTextWordByWord if animating text reveal
+elapsed_time = sync_to_word(word_time, elapsed_time)
+self.play(AddTextWordByWord(text_object), run_time=0.5)
+elapsed_time += 0.5
+```
+
+WORD-SYNC IMPLEMENTATION PATTERN:
+```python
+def construct(self):
+    elapsed_time = 0
+
+    # Scene setup
+    title = Text("Einstein's Equation")
+    equation = MathTex(r"E = mc^2")
+
+    # Position objects
+    title.move_to(UP * 2)
+    equation.move_to(ORIGIN)
+
+    # Initial animations
+    self.play(FadeIn(title))
+    elapsed_time += 1.0
+    self.play(Write(equation))
+    elapsed_time += 1.5
+
+    # WORD-SYNCHRONIZED ANIMATIONS from word_sync data
+    # Example: word_sync = [
+    #   {"word": "Einstein", "time": 2.5, "action": "flash", "target": "title"},
+    #   {"word": "equation", "time": 3.2, "action": "circumscribe", "target": "equation"},
+    #   {"word": "energy", "time": 4.1, "action": "indicate", "target": "e_part"}
+    # ]
+
+    # When "Einstein" is spoken at 2.5s
+    elapsed_time = sync_to_word(2.5, elapsed_time)
+    self.play(Flash(title, color=YELLOW, line_length=0.5), run_time=0.3)
+    elapsed_time += 0.3
+
+    # When "equation" is spoken at 3.2s
+    elapsed_time = sync_to_word(3.2, elapsed_time)
+    self.play(Circumscribe(equation, color=RED, fade_out=True), run_time=0.6)
+    elapsed_time += 0.6
+
+    # When "energy" is spoken at 4.1s (highlight E in equation)
+    e_part = equation[0]  # Get the "E" part
+    elapsed_time = sync_to_word(4.1, elapsed_time)
+    self.play(Indicate(e_part, scale_factor=1.5), run_time=0.4)
+    elapsed_time += 0.4
+```
+
+ACCESSING EQUATION PARTS FOR WORD-SYNC:
+```python
+# MathTex allows indexing individual parts
+equation = MathTex(r"E", "=", "m", "c", "^2")
+# equation[0] = "E"
+# equation[1] = "="
+# equation[2] = "m"
+# equation[3] = "c"
+# equation[4] = "^2"
+
+# When narration says "E" - highlight E
+self.play(Indicate(equation[0], scale_factor=1.5), run_time=0.4)
+
+# When narration says "mass" - highlight m
+self.play(Indicate(equation[2], scale_factor=1.5), run_time=0.4)
+
+# When narration says "speed of light" - highlight c
+self.play(Circumscribe(equation[3], color=BLUE), run_time=0.5)
+```
+
+SYNCHRONIZATION STRATEGY:
+1. Mathematical terms spoken → Indicate/Circumscribe the equation part
+2. "This" or "here" → FocusOn or Indicate the referenced object
+3. Concept introduction → Flash or scale_pop the main object
+4. Step-by-step listing → Indicate each item as mentioned
+5. Emphasis words → color_pulse or wiggle
+6. Progressive explanation → write_word for text reveal
 
 CRITICAL - FORBIDDEN/DEPRECATED (DO NOT USE):
 - ShowCreation (use Create instead)
@@ -361,11 +506,20 @@ Return ONLY Python code."""
 
         instructions_json = json.dumps(instructions_with_timing, indent=2)
 
+        # Extract word_sync data from instructions
+        has_word_sync = any(inst.get("word_sync") for inst in visual_instructions)
+        word_sync_note = ""
+        if has_word_sync:
+            word_sync_note = "\n\nWORD-SYNC DATA PROVIDED - IMPLEMENT ALL WORD-SYNCHRONIZED ANIMATIONS!"
+            word_sync_note += "\nEach scene includes 'word_sync' array with precise timing for dynamic effects."
+            word_sync_note += "\nYou MUST implement these synchronized animations to make content POP!"
+
         user_prompt = f"""Topic: {topic}
 Total duration: {target_duration} seconds
 
 Timestamped visual instructions:
 {instructions_json}
+{word_sync_note}
 
 CRITICAL IMPLEMENTATION REQUIREMENTS FOR 9:8 CANVAS:
 
@@ -408,6 +562,40 @@ IMPLEMENT THE VISUAL INSTRUCTIONS CREATIVELY:
 - Use colors, gradients, and effects to enhance visual appeal
 - Add particle effects, glowing, highlighting where appropriate
 - Chain animations together smoothly
+
+IMPLEMENT WORD-SYNC ACTIONS (CRITICAL!):
+- Each instruction may include "word_sync" array with synchronized animations
+- Format: {"word": "Einstein", "time": 2.5, "action": "flash", "target": "title"}
+- MUST implement ALL word_sync actions using the patterns shown above
+- Include sync_to_word() helper function in your class (before construct method)
+- Map targets to actual objects you create (e.g., "title" → title variable)
+- Use precise timing from word_sync data
+- Make animations SHORT and PUNCHY (0.3-0.6s each) so they don't overlap
+- Example implementation:
+  ```python
+  # Add helper at class level (before construct)
+  def sync_to_word(self, target_time, elapsed_time):
+      if target_time > elapsed_time:
+          self.wait(target_time - elapsed_time)
+      return target_time
+
+  # In construct method:
+  for sync_action in scene_word_sync:
+      word = sync_action["word"]
+      time = sync_action["time"]
+      action = sync_action["action"]
+      target = sync_action["target"]  # Map this to your actual object
+
+      elapsed_time = self.sync_to_word(time, elapsed_time)
+
+      if action == "indicate":
+          self.play(Indicate(target_object, scale_factor=1.3), run_time=0.4)
+          elapsed_time += 0.4
+      elif action == "flash":
+          self.play(Flash(target_object, color=YELLOW), run_time=0.3)
+          elapsed_time += 0.3
+      # ... handle all action types
+  ```
 
 CONTENT CLEANUP (READ "cleanup" FIELD):
 - If cleanup says "fade out intro title" → self.play(FadeOut(title_object))
@@ -721,6 +909,43 @@ def clamp_position(x, y, max_x=4.5, max_y=4.0):
         max(-max_x, min(max_x, x)),
         max(-max_y, min(max_y, y))
     )
+
+# CRITICAL: Runtime spatial tracking to prevent overlaps
+placed_objects = []
+
+def is_position_clear(x, y, width, height, buffer=0.3):
+    """Check if a position is free from overlaps with existing objects."""
+    for obj_info in placed_objects:
+        # Check if bounding boxes overlap (with buffer)
+        if (abs(x - obj_info['x']) < (width + obj_info['width']) / 2 + buffer and
+            abs(y - obj_info['y']) < (height + obj_info['height']) / 2 + buffer):
+            return False
+    return True
+
+def place_object_safe(obj, x, y, width, height):
+    """Place object safely - clamps to bounds and registers position."""
+    # Clamp to canvas bounds (9:8 aspect ratio)
+    x = max(-5.4 + width/2, min(5.4 - width/2, x))
+    y = max(-4.8 + height/2, min(4.8 - height/2, y))
+
+    # Move object to clamped position
+    obj.move_to(np.array([x, y, 0]))
+
+    # Register this object's position
+    placed_objects.append({
+        'x': x,
+        'y': y,
+        'width': width,
+        'height': height,
+        'obj': obj
+    })
+
+    return obj
+
+def remove_object_tracking(obj):
+    """Remove object from spatial tracking when it's removed from scene."""
+    global placed_objects
+    placed_objects = [info for info in placed_objects if info['obj'] != obj]
 '''
 
         # Step 1: Ensure numpy is imported (needed for np.array in position replacements)
@@ -808,6 +1033,73 @@ def clamp_position(x, y, max_x=4.5, max_y=4.0):
         logger.info("Canvas bounds enforcement complete")
         return code
 
+    def _validate_actual_positions(self, code: str) -> Tuple[bool, List[str]]:
+        """
+        Extract actual object positions from code and validate boundaries/overlaps.
+
+        Args:
+            code: The generated Manim code
+
+        Returns:
+            Tuple of (is_valid, list_of_errors)
+        """
+        errors = []
+
+        # Extract move_to() calls: obj.move_to(np.array([x, y, 0]))
+        move_pattern = r'(\w+)\.move_to\((?:np\.array\()?[\[\(]([^,\]]+),\s*([^,\]]+)(?:,\s*[^\]]+)?[\]\)]'
+        moves = re.findall(move_pattern, code)
+
+        positions = {}
+        for match in moves:
+            obj_id = match[0]
+            try:
+                x_str = match[1].strip()
+                y_str = match[2].strip()
+
+                # Evaluate simple expressions (e.g., "3.5", "-2.0")
+                # Skip complex expressions (variables, functions)
+                if re.match(r'^[-+]?\d+\.?\d*$', x_str) and re.match(r'^[-+]?\d+\.?\d*$', y_str):
+                    x = float(x_str)
+                    y = float(y_str)
+
+                    # Estimate dimensions (conservative: 3x1 for text, 2x2 for shapes)
+                    # This is a heuristic - real dimensions depend on object type
+                    width = 3.0
+                    height = 1.0
+
+                    positions[obj_id] = (x, y, width, height)
+            except (ValueError, IndexError):
+                continue
+
+        # Check boundaries
+        for obj_id, (x, y, width, height) in positions.items():
+            left = x - width/2
+            right = x + width/2
+            top = y + height/2
+            bottom = y - height/2
+
+            if left < -5.4:
+                errors.append(f"BOUNDARY VIOLATION: {obj_id} extends beyond left boundary ({left:.2f} < -5.4)")
+            if right > 5.4:
+                errors.append(f"BOUNDARY VIOLATION: {obj_id} extends beyond right boundary ({right:.2f} > 5.4)")
+            if top > 4.8:
+                errors.append(f"BOUNDARY VIOLATION: {obj_id} extends beyond top boundary ({top:.2f} > 4.8)")
+            if bottom < -4.8:
+                errors.append(f"BOUNDARY VIOLATION: {obj_id} extends beyond bottom boundary ({bottom:.2f} < -4.8)")
+
+        # Check for overlaps (simplified - only checks objects with explicit positions)
+        obj_list = list(positions.items())
+        for i in range(len(obj_list)):
+            for j in range(i + 1, len(obj_list)):
+                id1, (x1, y1, w1, h1) = obj_list[i]
+                id2, (x2, y2, w2, h2) = obj_list[j]
+
+                # Check if bounding boxes overlap
+                if (abs(x1 - x2) < (w1 + w2)/2 and abs(y1 - y2) < (h1 + h2)/2):
+                    errors.append(f"OVERLAP DETECTED: {id1} overlaps with {id2}")
+
+        return len(errors) == 0, errors
+
     async def _validate_code(self, code_path: Path) -> Tuple[bool, Optional[str]]:
         """
         Validate Manim code by checking syntax and imports.
@@ -856,7 +1148,14 @@ def clamp_position(x, y, max_x=4.5, max_y=4.0):
                 logger.warning(error_msg)
                 return False, error_msg
 
-            logger.info("Code validation passed")
+            # NEW: Validate actual positions extracted from code
+            is_valid_positions, position_errors = self._validate_actual_positions(code_content)
+            if not is_valid_positions:
+                error_msg = "Spatial violations detected:\n" + "\n".join(position_errors)
+                logger.warning(error_msg)
+                return False, error_msg
+
+            logger.info("Code validation passed (syntax, constraints, and spatial checks)")
             return True, None
 
         except subprocess.TimeoutExpired:
