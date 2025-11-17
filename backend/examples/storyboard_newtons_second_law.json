@@ -1,0 +1,594 @@
+{
+  "metadata": {
+    "title": "Newton's Second Law of Motion",
+    "topic": "Force, Mass, and Acceleration",
+    "category": "physics",
+    "difficulty": "intermediate",
+    "duration": 55.0,
+    "target_audience": "high school physics students",
+    "learning_objectives": [
+      "Understand the relationship F = ma",
+      "Learn how force affects acceleration",
+      "See practical examples of Newton's Second Law"
+    ],
+    "prerequisites": [
+      "Basic understanding of force",
+      "Understanding of velocity and acceleration"
+    ]
+  },
+  "global_settings": {
+    "background_color": "#0F1419",
+    "theme": "dark",
+    "font_family": "Arial",
+    "voice_settings": {
+      "voice_id": "physics_enthusiast",
+      "speed": 1.0,
+      "pitch": 1.0
+    }
+  },
+  "segments": [
+    {
+      "id": "seg_intro",
+      "start_time": 0.0,
+      "end_time": 7.0,
+      "narration": {
+        "text": "Newton's Second Law is one of the most important principles in physics. It describes how objects move when forces act upon them.",
+        "emphasis_words": ["Newton's Second Law", "forces", "move"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "title_main",
+          "type": "text",
+          "content": "Newton's Second Law",
+          "action": "fade_in",
+          "position": "top",
+          "size": "large",
+          "timing": 0.5,
+          "duration": 2.0,
+          "style": {
+            "color": "#58A6FF",
+            "font_size": 68,
+            "font_weight": "bold"
+          },
+          "persist": false
+        },
+        {
+          "object_id": "subtitle_law",
+          "type": "text",
+          "content": "Force, Mass & Acceleration",
+          "action": "fade_in",
+          "position": {
+            "x": 0,
+            "y": -1.2,
+            "z": 0
+          },
+          "timing": 2.5,
+          "duration": 1.5,
+          "style": {
+            "color": "#A8DADC",
+            "font_size": 40
+          },
+          "persist": false
+        }
+      ]
+    },
+    {
+      "id": "seg_formula",
+      "start_time": 7.0,
+      "end_time": 15.0,
+      "narration": {
+        "text": "The law is expressed by the equation: Force equals mass times acceleration. Let's break this down.",
+        "emphasis_words": ["Force", "mass", "acceleration", "equation"],
+        "pause_after": 0.8
+      },
+      "visual_states": [
+        {
+          "object_id": "formula_main",
+          "type": "equation",
+          "content": "F = ma",
+          "action": "write",
+          "position": "center",
+          "size": "huge",
+          "timing": 1.5,
+          "duration": 2.5,
+          "style": {
+            "color": "#FFFFFF",
+            "font_size": 96
+          },
+          "persist": true,
+          "layer": 2
+        },
+        {
+          "object_id": "formula_box",
+          "type": "shape",
+          "content": {
+            "shape_type": "rectangle",
+            "width": 6,
+            "height": 2.5
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 0.5,
+          "duration": 1.5,
+          "style": {
+            "stroke_color": "#58A6FF",
+            "stroke_width": 4,
+            "fill_color": "transparent",
+            "opacity": 0.8,
+            "border_radius": 15
+          },
+          "persist": true,
+          "layer": 1
+        }
+      ]
+    },
+    {
+      "id": "seg_define_force",
+      "start_time": 15.0,
+      "end_time": 22.0,
+      "narration": {
+        "text": "F represents force, measured in Newtons. It's any push or pull acting on an object.",
+        "emphasis_words": ["force", "Newtons", "push or pull"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "f_highlight",
+          "type": "equation",
+          "content": "F",
+          "action": "highlight",
+          "position": {
+            "x": -1.5,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 0.5,
+          "duration": 2.0,
+          "style": {
+            "color": "#FF6B6B",
+            "font_size": 96
+          },
+          "action_params": {
+            "color": "#FF6B6B"
+          },
+          "layer": 3
+        },
+        {
+          "object_id": "f_label",
+          "type": "text",
+          "content": "Force (Newtons)",
+          "action": "fade_in",
+          "position": "top_left",
+          "timing": 2.0,
+          "duration": 1.5,
+          "style": {
+            "color": "#FF6B6B",
+            "font_size": 42
+          },
+          "persist": true
+        },
+        {
+          "object_id": "arrow_force",
+          "type": "vector",
+          "content": {
+            "start": {"x": -3, "y": 2},
+            "end": {"x": -1.8, "y": 0.5}
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 2.5,
+          "duration": 1.0,
+          "style": {
+            "stroke_color": "#FF6B6B",
+            "stroke_width": 3
+          },
+          "persist": true
+        }
+      ]
+    },
+    {
+      "id": "seg_define_mass",
+      "start_time": 22.0,
+      "end_time": 29.0,
+      "narration": {
+        "text": "m represents mass, measured in kilograms. Mass is the amount of matter in an object - how much 'stuff' it contains.",
+        "emphasis_words": ["mass", "kilograms", "matter"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "m_highlight",
+          "type": "equation",
+          "content": "m",
+          "action": "highlight",
+          "position": {
+            "x": 0.3,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 0.5,
+          "duration": 2.0,
+          "style": {
+            "color": "#4ECDC4",
+            "font_size": 96
+          },
+          "action_params": {
+            "color": "#4ECDC4"
+          },
+          "layer": 3
+        },
+        {
+          "object_id": "m_label",
+          "type": "text",
+          "content": "Mass (kg)",
+          "action": "fade_in",
+          "position": "left",
+          "timing": 2.0,
+          "duration": 1.5,
+          "style": {
+            "color": "#4ECDC4",
+            "font_size": 42
+          },
+          "persist": true
+        },
+        {
+          "object_id": "mass_object",
+          "type": "shape",
+          "content": {
+            "shape_type": "rectangle",
+            "width": 1.5,
+            "height": 1.5
+          },
+          "action": "fade_in",
+          "position": {
+            "x": -3,
+            "y": -2,
+            "z": 0
+          },
+          "timing": 3.0,
+          "duration": 1.5,
+          "style": {
+            "fill_color": "#4ECDC4",
+            "stroke_color": "#2C8C84",
+            "stroke_width": 3,
+            "opacity": 0.8
+          },
+          "persist": true
+        },
+        {
+          "object_id": "mass_label_obj",
+          "type": "text",
+          "content": "10 kg",
+          "action": "write",
+          "position": {
+            "x": -3,
+            "y": -2,
+            "z": 0
+          },
+          "timing": 4.0,
+          "duration": 1.0,
+          "style": {
+            "color": "#FFFFFF",
+            "font_size": 32,
+            "font_weight": "bold"
+          },
+          "persist": true
+        }
+      ]
+    },
+    {
+      "id": "seg_define_acceleration",
+      "start_time": 29.0,
+      "end_time": 36.0,
+      "narration": {
+        "text": "a represents acceleration, measured in meters per second squared. It's the rate at which velocity changes.",
+        "emphasis_words": ["acceleration", "meters per second squared", "velocity changes"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "a_highlight",
+          "type": "equation",
+          "content": "a",
+          "action": "highlight",
+          "position": {
+            "x": 1.5,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 0.5,
+          "duration": 2.0,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 96
+          },
+          "action_params": {
+            "color": "#95E1D3"
+          },
+          "layer": 3
+        },
+        {
+          "object_id": "a_label",
+          "type": "text",
+          "content": "Acceleration (m/s²)",
+          "action": "fade_in",
+          "position": "right",
+          "timing": 2.0,
+          "duration": 1.5,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 42
+          },
+          "persist": true
+        },
+        {
+          "object_id": "velocity_arrow_1",
+          "type": "vector",
+          "content": {
+            "start": {"x": 1, "y": -2},
+            "end": {"x": 2.5, "y": -2}
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 3.0,
+          "duration": 1.0,
+          "style": {
+            "stroke_color": "#95E1D3",
+            "stroke_width": 4
+          },
+          "persist": true
+        },
+        {
+          "object_id": "velocity_arrow_2",
+          "type": "vector",
+          "content": {
+            "start": {"x": 1, "y": -2.5},
+            "end": {"x": 4, "y": -2.5}
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 4.0,
+          "duration": 1.0,
+          "style": {
+            "stroke_color": "#FFD700",
+            "stroke_width": 4
+          },
+          "persist": true
+        },
+        {
+          "object_id": "accel_label",
+          "type": "text",
+          "content": "Increasing velocity",
+          "action": "fade_in",
+          "position": {
+            "x": 2.5,
+            "y": -3.2,
+            "z": 0
+          },
+          "timing": 4.5,
+          "duration": 1.0,
+          "style": {
+            "color": "#FFD700",
+            "font_size": 28
+          }
+        }
+      ]
+    },
+    {
+      "id": "seg_example_setup",
+      "start_time": 36.0,
+      "end_time": 43.0,
+      "narration": {
+        "text": "Let's see an example. If we apply a 50 Newton force to a 10 kilogram box, what's the acceleration?",
+        "emphasis_words": ["example", "50 Newton force", "10 kilogram", "acceleration"],
+        "pause_after": 0.8
+      },
+      "visual_states": [
+        {
+          "object_id": "example_box",
+          "type": "shape",
+          "content": {
+            "shape_type": "rectangle",
+            "width": 2,
+            "height": 2
+          },
+          "action": "fade_in",
+          "position": "center",
+          "timing": 1.0,
+          "duration": 1.5,
+          "style": {
+            "fill_color": "#FFB86C",
+            "stroke_color": "#FF8C42",
+            "stroke_width": 4,
+            "opacity": 0.9
+          },
+          "persist": true,
+          "layer": 1
+        },
+        {
+          "object_id": "example_mass_label",
+          "type": "text",
+          "content": "m = 10 kg",
+          "action": "write",
+          "position": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 2.5,
+          "duration": 1.0,
+          "style": {
+            "color": "#000000",
+            "font_size": 36,
+            "font_weight": "bold"
+          },
+          "persist": true,
+          "layer": 2
+        },
+        {
+          "object_id": "example_force_arrow",
+          "type": "vector",
+          "content": {
+            "start": {"x": -4, "y": 0},
+            "end": {"x": -1.2, "y": 0}
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 4.0,
+          "duration": 1.5,
+          "style": {
+            "stroke_color": "#FF6B6B",
+            "stroke_width": 6
+          },
+          "persist": true,
+          "layer": 2
+        },
+        {
+          "object_id": "example_force_label",
+          "type": "text",
+          "content": "F = 50 N",
+          "action": "fade_in",
+          "position": {
+            "x": -2.6,
+            "y": 0.8,
+            "z": 0
+          },
+          "timing": 5.0,
+          "duration": 1.0,
+          "style": {
+            "color": "#FF6B6B",
+            "font_size": 40,
+            "font_weight": "bold"
+          },
+          "persist": true
+        }
+      ]
+    },
+    {
+      "id": "seg_calculation",
+      "start_time": 43.0,
+      "end_time": 50.0,
+      "narration": {
+        "text": "Using F equals m a, we rearrange to get a equals F divided by m. That's 50 divided by 10, which equals 5 meters per second squared.",
+        "emphasis_words": ["rearrange", "divided by", "5 meters per second squared"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "calc_step_1",
+          "type": "equation",
+          "content": "a = \\frac{F}{m}",
+          "action": "write",
+          "position": "bottom_left",
+          "size": "large",
+          "timing": 1.0,
+          "duration": 2.0,
+          "style": {
+            "color": "#FFFFFF",
+            "font_size": 56
+          },
+          "persist": true
+        },
+        {
+          "object_id": "calc_step_2",
+          "type": "equation",
+          "content": "a = \\frac{50\\,\\text{N}}{10\\,\\text{kg}}",
+          "action": "write",
+          "position": {
+            "x": -3,
+            "y": -2,
+            "z": 0
+          },
+          "timing": 3.0,
+          "duration": 2.0,
+          "style": {
+            "color": "#FFD700",
+            "font_size": 48
+          },
+          "persist": true
+        },
+        {
+          "object_id": "calc_step_3",
+          "type": "equation",
+          "content": "a = 5\\,\\text{m/s}^2",
+          "action": "write",
+          "position": "bottom_right",
+          "size": "large",
+          "timing": 5.0,
+          "duration": 1.5,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 56
+          },
+          "persist": true
+        },
+        {
+          "object_id": "result_highlight",
+          "type": "shape",
+          "content": {
+            "shape_type": "circle",
+            "radius": 1.5
+          },
+          "action": "create",
+          "position": "bottom_right",
+          "timing": 6.0,
+          "duration": 0.8,
+          "style": {
+            "stroke_color": "#95E1D3",
+            "stroke_width": 4,
+            "fill_color": "transparent",
+            "opacity": 0.8
+          }
+        }
+      ]
+    },
+    {
+      "id": "seg_demonstration",
+      "start_time": 50.0,
+      "end_time": 55.0,
+      "narration": {
+        "text": "So the box accelerates at 5 meters per second squared in the direction of the applied force. And that's Newton's Second Law in action!",
+        "emphasis_words": ["accelerates", "direction", "Newton's Second Law"],
+        "pause_after": 1.0
+      },
+      "visual_states": [
+        {
+          "object_id": "box_motion",
+          "type": "shape",
+          "content": {
+            "reference": "example_box"
+          },
+          "action": "move",
+          "position": "center",
+          "timing": 1.0,
+          "duration": 3.0,
+          "action_params": {
+            "from": {"x": 0, "y": 0},
+            "to": {"x": 4, "y": 0}
+          },
+          "transition": {
+            "type": "ease_in"
+          }
+        },
+        {
+          "object_id": "motion_trail",
+          "type": "annotation",
+          "content": "Accelerating!",
+          "action": "fade_in",
+          "position": {
+            "x": 2,
+            "y": 1.5,
+            "z": 0
+          },
+          "timing": 2.0,
+          "duration": 1.5,
+          "style": {
+            "color": "#FFD700",
+            "font_size": 42
+          }
+        }
+      ]
+    }
+  ]
+}

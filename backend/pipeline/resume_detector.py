@@ -36,7 +36,8 @@ class ResumeDetector:
             "script": False,
             "audio": False,
             "timestamps": False,
-            "visual_instructions": False,
+            "visual_instructions": False,  # Legacy
+            "storyboard": False,  # NEW
             "manim_code": False,
             "manim_render": False,
             "celebrity_videos": False,
@@ -69,11 +70,17 @@ class ResumeDetector:
             steps["timestamps"] = True
             logger.info("✓ Timestamps found")
 
-        # Check visual instructions
+        # Check visual instructions (legacy)
         visual_path = self.job_dir / "visual_instructions.json"
         if visual_path.exists() and visual_path.stat().st_size > 0:
             steps["visual_instructions"] = True
-            logger.info("✓ Visual instructions found")
+            logger.info("✓ Visual instructions found (legacy)")
+
+        # Check storyboard (NEW)
+        storyboard_path = self.job_dir / "storyboard.json"
+        if storyboard_path.exists() and storyboard_path.stat().st_size > 0:
+            steps["storyboard"] = True
+            logger.info("✓ Storyboard found")
 
         # Check manim code
         manim_path = self.job_dir / "animation.py"
@@ -136,8 +143,9 @@ class ResumeDetector:
             return "audio"
         elif not steps["timestamps"]:
             return "timestamps"
-        elif not steps["visual_instructions"]:
-            return "visual_instructions"
+        # Check for new storyboard system first, fallback to legacy
+        elif not steps["storyboard"] and not steps["visual_instructions"]:
+            return "storyboard"  # or "visual_instructions" for legacy
         elif not steps["manim_code"]:
             return "manim_code"
         elif not steps["manim_render"]:
@@ -164,13 +172,23 @@ class ResumeDetector:
         return None
 
     def load_visual_instructions(self) -> Optional[List[Dict]]:
-        """Load visual instructions from file if they exist."""
+        """Load visual instructions from file if they exist (legacy)."""
         visual_path = self.job_dir / "visual_instructions.json"
         if visual_path.exists():
             try:
                 return json.loads(visual_path.read_text(encoding="utf-8"))
             except Exception as e:
                 logger.error(f"Failed to load visual instructions: {e}")
+        return None
+
+    def load_storyboard(self) -> Optional[Dict]:
+        """Load storyboard from file if it exists (NEW)."""
+        storyboard_path = self.job_dir / "storyboard.json"
+        if storyboard_path.exists():
+            try:
+                return json.loads(storyboard_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.error(f"Failed to load storyboard: {e}")
         return None
 
     def get_paths(self) -> Dict[str, Path]:
@@ -180,7 +198,8 @@ class ResumeDetector:
             "audio": self.job_dir / "narration.mp3",
             "audio_segments": self.job_dir / "audio_segments",
             "srt": self.job_dir / "subtitles.srt",
-            "visual_instructions": self.job_dir / "visual_instructions.json",
+            "visual_instructions": self.job_dir / "visual_instructions.json",  # Legacy
+            "storyboard": self.job_dir / "storyboard.json",  # NEW
             "manim_file": self.job_dir / "animation.py",
             "manim_output": self.job_dir / "manim_output",
             "celebrity_videos": self.job_dir / "celebrity_videos",
@@ -205,7 +224,8 @@ class ResumeDetector:
             "script": "1. Script Generation",
             "audio": "2. Audio Generation",
             "timestamps": "3. Timestamp Extraction",
-            "visual_instructions": "4. Visual Instructions",
+            "visual_instructions": "4a. Visual Instructions (legacy)",
+            "storyboard": "4b. Storyboard Generation (NEW)",
             "manim_code": "5. Manim Code",
             "manim_render": "6. Manim Render",
             "celebrity_videos": "7. Celebrity Videos",

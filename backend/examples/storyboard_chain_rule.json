@@ -1,0 +1,584 @@
+{
+  "metadata": {
+    "title": "The Chain Rule - Calculus Made Easy",
+    "topic": "Chain Rule for Derivatives",
+    "category": "mathematics",
+    "difficulty": "intermediate",
+    "duration": 60.0,
+    "target_audience": "high school AP calculus and college students",
+    "learning_objectives": [
+      "Understand when to use the chain rule",
+      "Apply the chain rule to composite functions",
+      "Recognize the pattern: derivative of outer × derivative of inner"
+    ],
+    "prerequisites": [
+      "Basic derivatives (power rule, product rule)",
+      "Understanding of composite functions",
+      "Function notation"
+    ]
+  },
+  "global_settings": {
+    "background_color": "#0F1419",
+    "theme": "dark",
+    "font_family": "Arial",
+    "voice_settings": {
+      "voice_id": "math_teacher",
+      "speed": 0.95,
+      "pitch": 1.0
+    },
+    "camera": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 60
+    }
+  },
+  "segments": [
+    {
+      "id": "seg_intro",
+      "start_time": 0.0,
+      "end_time": 7.0,
+      "narration": {
+        "text": "The chain rule is one of the most powerful tools in calculus. It helps us find derivatives of composite functions - functions within functions.",
+        "emphasis_words": ["chain rule", "composite functions", "functions within functions"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "title_main",
+          "type": "text",
+          "content": "The Chain Rule",
+          "action": "fade_in",
+          "position": "top",
+          "size": "large",
+          "timing": 0.5,
+          "duration": 2.0,
+          "style": {
+            "color": "#58A6FF",
+            "font_size": 72,
+            "font_weight": "bold"
+          },
+          "persist": false
+        },
+        {
+          "object_id": "subtitle",
+          "type": "text",
+          "content": "Derivatives of Composite Functions",
+          "action": "fade_in",
+          "position": {
+            "x": 0,
+            "y": -1.5,
+            "z": 0
+          },
+          "timing": 2.5,
+          "duration": 1.5,
+          "style": {
+            "color": "#A8DADC",
+            "font_size": 40
+          },
+          "persist": false
+        }
+      ]
+    },
+    {
+      "id": "seg_composite_function",
+      "start_time": 7.0,
+      "end_time": 16.0,
+      "narration": {
+        "text": "A composite function is when one function is inside another. For example, if we have f of g of x, we have the function g nested inside function f.",
+        "emphasis_words": ["composite function", "inside another", "nested"],
+        "pause_after": 0.8
+      },
+      "visual_states": [
+        {
+          "object_id": "composite_notation",
+          "type": "equation",
+          "content": "f(g(x))",
+          "action": "write",
+          "position": "center",
+          "size": "huge",
+          "timing": 1.5,
+          "duration": 2.5,
+          "style": {
+            "color": "#FFFFFF",
+            "font_size": 80
+          },
+          "persist": true,
+          "layer": 2
+        },
+        {
+          "object_id": "outer_label",
+          "type": "text",
+          "content": "outer function",
+          "action": "fade_in",
+          "position": {
+            "x": -2.5,
+            "y": 1.5,
+            "z": 0
+          },
+          "timing": 4.0,
+          "duration": 1.0,
+          "style": {
+            "color": "#FF6B9D",
+            "font_size": 32
+          },
+          "persist": true
+        },
+        {
+          "object_id": "inner_label",
+          "type": "text",
+          "content": "inner function",
+          "action": "fade_in",
+          "position": {
+            "x": 0.5,
+            "y": 1.5,
+            "z": 0
+          },
+          "timing": 5.0,
+          "duration": 1.0,
+          "style": {
+            "color": "#4ECDC4",
+            "font_size": 32
+          },
+          "persist": true
+        },
+        {
+          "object_id": "arrow_outer",
+          "type": "vector",
+          "content": {
+            "start": {"x": -2.5, "y": 1.2},
+            "end": {"x": -1.2, "y": 0.3}
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 4.2,
+          "duration": 0.8,
+          "style": {
+            "stroke_color": "#FF6B9D",
+            "stroke_width": 3
+          },
+          "persist": true
+        },
+        {
+          "object_id": "arrow_inner",
+          "type": "vector",
+          "content": {
+            "start": {"x": 0.5, "y": 1.2},
+            "end": {"x": 0.0, "y": 0.3}
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 5.2,
+          "duration": 0.8,
+          "style": {
+            "stroke_color": "#4ECDC4",
+            "stroke_width": 3
+          },
+          "persist": true
+        }
+      ]
+    },
+    {
+      "id": "seg_chain_rule_formula",
+      "start_time": 16.0,
+      "end_time": 26.0,
+      "narration": {
+        "text": "The chain rule states: the derivative of f of g of x equals f prime of g of x, times g prime of x. In other words, derivative of the outer function times derivative of the inner function.",
+        "emphasis_words": ["chain rule", "derivative of the outer", "derivative of the inner"],
+        "pause_after": 1.0
+      },
+      "visual_states": [
+        {
+          "object_id": "chain_rule_formula",
+          "type": "equation",
+          "content": "\\frac{d}{dx}[f(g(x))] = f'(g(x)) \\cdot g'(x)",
+          "action": "write",
+          "position": "center",
+          "size": "large",
+          "timing": 2.0,
+          "duration": 4.0,
+          "style": {
+            "color": "#FFFFFF",
+            "font_size": 64
+          },
+          "persist": true,
+          "layer": 3,
+          "transition": {
+            "type": "smooth",
+            "lag_ratio": 0.15
+          }
+        },
+        {
+          "object_id": "formula_box",
+          "type": "shape",
+          "content": {
+            "shape_type": "rectangle",
+            "width": 12,
+            "height": 2.5
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 1.0,
+          "duration": 1.5,
+          "style": {
+            "stroke_color": "#FFD700",
+            "stroke_width": 4,
+            "fill_color": "transparent",
+            "opacity": 0.8,
+            "border_radius": 15
+          },
+          "persist": true,
+          "layer": 2
+        },
+        {
+          "object_id": "outer_deriv_highlight",
+          "type": "annotation",
+          "content": "",
+          "action": "indicate",
+          "position": {
+            "x": -1.5,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 6.5,
+          "duration": 1.5,
+          "action_params": {
+            "color": "#FF6B9D"
+          }
+        },
+        {
+          "object_id": "inner_deriv_highlight",
+          "type": "annotation",
+          "content": "",
+          "action": "indicate",
+          "position": {
+            "x": 2.5,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 8.0,
+          "duration": 1.5,
+          "action_params": {
+            "color": "#4ECDC4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "seg_example_intro",
+      "start_time": 26.0,
+      "end_time": 32.0,
+      "narration": {
+        "text": "Let's see an example. Find the derivative of the square root of x squared plus one.",
+        "emphasis_words": ["example", "square root", "x squared plus one"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "example_label",
+          "type": "text",
+          "content": "Example:",
+          "action": "fade_in",
+          "position": "top_left",
+          "size": "medium",
+          "timing": 0.5,
+          "duration": 1.0,
+          "style": {
+            "color": "#FFD700",
+            "font_size": 48,
+            "font_weight": "bold"
+          },
+          "persist": true
+        },
+        {
+          "object_id": "example_function",
+          "type": "equation",
+          "content": "h(x) = \\sqrt{x^2 + 1}",
+          "action": "write",
+          "position": {
+            "x": 0,
+            "y": 1.5,
+            "z": 0
+          },
+          "timing": 2.0,
+          "duration": 2.5,
+          "style": {
+            "color": "#FFFFFF",
+            "font_size": 56
+          },
+          "persist": true
+        },
+        {
+          "object_id": "find_derivative",
+          "type": "text",
+          "content": "Find: h'(x) = ?",
+          "action": "fade_in",
+          "position": {
+            "x": 0,
+            "y": 0.3,
+            "z": 0
+          },
+          "timing": 4.5,
+          "duration": 1.0,
+          "style": {
+            "color": "#A8DADC",
+            "font_size": 44
+          },
+          "persist": true
+        }
+      ]
+    },
+    {
+      "id": "seg_identify_parts",
+      "start_time": 32.0,
+      "end_time": 40.0,
+      "narration": {
+        "text": "First, identify the outer and inner functions. The outer function is the square root, and the inner function is x squared plus one.",
+        "emphasis_words": ["identify", "outer function", "inner function"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "outer_function_eq",
+          "type": "equation",
+          "content": "f(u) = \\sqrt{u}",
+          "action": "write",
+          "position": "left",
+          "timing": 2.0,
+          "duration": 2.0,
+          "style": {
+            "color": "#FF6B9D",
+            "font_size": 48
+          },
+          "persist": true
+        },
+        {
+          "object_id": "outer_box",
+          "type": "shape",
+          "content": {
+            "shape_type": "rectangle",
+            "width": 4,
+            "height": 1.5
+          },
+          "action": "create",
+          "position": "left",
+          "timing": 1.5,
+          "duration": 1.0,
+          "style": {
+            "stroke_color": "#FF6B9D",
+            "stroke_width": 3,
+            "fill_color": "transparent",
+            "border_radius": 10
+          },
+          "persist": true,
+          "layer": 1
+        },
+        {
+          "object_id": "inner_function_eq",
+          "type": "equation",
+          "content": "g(x) = x^2 + 1",
+          "action": "write",
+          "position": "right",
+          "timing": 4.0,
+          "duration": 2.0,
+          "style": {
+            "color": "#4ECDC4",
+            "font_size": 48
+          },
+          "persist": true
+        },
+        {
+          "object_id": "inner_box",
+          "type": "shape",
+          "content": {
+            "shape_type": "rectangle",
+            "width": 4.5,
+            "height": 1.5
+          },
+          "action": "create",
+          "position": "right",
+          "timing": 3.5,
+          "duration": 1.0,
+          "style": {
+            "stroke_color": "#4ECDC4",
+            "stroke_width": 3,
+            "fill_color": "transparent",
+            "border_radius": 10
+          },
+          "persist": true,
+          "layer": 1
+        }
+      ]
+    },
+    {
+      "id": "seg_find_derivatives",
+      "start_time": 40.0,
+      "end_time": 48.0,
+      "narration": {
+        "text": "Next, find the derivatives. The derivative of square root u is one over two square root u. The derivative of x squared plus one is two x.",
+        "emphasis_words": ["derivatives", "one over two square root u", "two x"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "outer_derivative",
+          "type": "equation",
+          "content": "f'(u) = \\frac{1}{2\\sqrt{u}}",
+          "action": "write",
+          "position": {
+            "x": -3,
+            "y": -1.5,
+            "z": 0
+          },
+          "timing": 1.5,
+          "duration": 2.5,
+          "style": {
+            "color": "#FF6B9D",
+            "font_size": 48
+          },
+          "persist": true
+        },
+        {
+          "object_id": "inner_derivative",
+          "type": "equation",
+          "content": "g'(x) = 2x",
+          "action": "write",
+          "position": {
+            "x": 3,
+            "y": -1.5,
+            "z": 0
+          },
+          "timing": 4.0,
+          "duration": 2.0,
+          "style": {
+            "color": "#4ECDC4",
+            "font_size": 48
+          },
+          "persist": true
+        }
+      ]
+    },
+    {
+      "id": "seg_apply_chain_rule",
+      "start_time": 48.0,
+      "end_time": 55.0,
+      "narration": {
+        "text": "Now apply the chain rule. We substitute g of x into f prime, then multiply by g prime of x.",
+        "emphasis_words": ["apply the chain rule", "substitute", "multiply"],
+        "pause_after": 0.3
+      },
+      "visual_states": [
+        {
+          "object_id": "step_1",
+          "type": "equation",
+          "content": "h'(x) = f'(g(x)) \\cdot g'(x)",
+          "action": "write",
+          "position": {
+            "x": 0,
+            "y": 1.8,
+            "z": 0
+          },
+          "timing": 1.0,
+          "duration": 2.0,
+          "style": {
+            "color": "#FFFFFF",
+            "font_size": 48
+          },
+          "persist": true
+        },
+        {
+          "object_id": "step_2",
+          "type": "equation",
+          "content": "= \\frac{1}{2\\sqrt{x^2+1}} \\cdot 2x",
+          "action": "write",
+          "position": {
+            "x": 0,
+            "y": 0.5,
+            "z": 0
+          },
+          "timing": 3.5,
+          "duration": 2.5,
+          "style": {
+            "color": "#FFD700",
+            "font_size": 48
+          },
+          "persist": true
+        }
+      ]
+    },
+    {
+      "id": "seg_simplify",
+      "start_time": 55.0,
+      "end_time": 60.0,
+      "narration": {
+        "text": "Simplify to get the final answer: x over the square root of x squared plus one. And that's the chain rule in action!",
+        "emphasis_words": ["Simplify", "final answer", "chain rule"],
+        "pause_after": 1.0
+      },
+      "visual_states": [
+        {
+          "object_id": "final_answer",
+          "type": "equation",
+          "content": "h'(x) = \\frac{x}{\\sqrt{x^2+1}}",
+          "action": "write",
+          "position": "center",
+          "size": "huge",
+          "timing": 1.0,
+          "duration": 2.5,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 72
+          },
+          "persist": true,
+          "layer": 3
+        },
+        {
+          "object_id": "answer_highlight",
+          "type": "shape",
+          "content": {
+            "shape_type": "rectangle",
+            "width": 9,
+            "height": 2.5
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 0.5,
+          "duration": 1.0,
+          "style": {
+            "stroke_color": "#95E1D3",
+            "stroke_width": 4,
+            "fill_color": "transparent",
+            "opacity": 0.9,
+            "border_radius": 15
+          },
+          "layer": 2
+        },
+        {
+          "object_id": "checkmark",
+          "type": "text",
+          "content": "✓",
+          "action": "fade_in",
+          "position": {
+            "x": 5.5,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 3.5,
+          "duration": 0.8,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 80,
+            "font_weight": "bold"
+          },
+          "transition": {
+            "type": "wiggle"
+          }
+        }
+      ],
+      "camera_movement": {
+        "type": "zoom",
+        "zoom_level": 1.1,
+        "duration": 2.0
+      }
+    }
+  ]
+}

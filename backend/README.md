@@ -5,18 +5,68 @@ A powerful FastAPI backend for generating mobile-friendly 9:16 educational video
 ## Features
 
 - **9:16 Mobile-Friendly Videos** - Vertical format optimized for TikTok/Instagram/YouTube Shorts
-- **Lip-Synced Celebrity Narrators** - Drake and Sydney Sweeney lip-sync to educational content
+- **Lip-Synced Celebrity Narrators** - Drake and Sydney Sweeney alternate based on speaker voice
 - **Dual-Layer Video Composition**
-  - Top half: Educational Manim animations
-  - Bottom half: Lip-synced celebrity presenter
-- Multi-voice conversational scripts using OpenAI GPT-4o
-- Different TTS voices for each character (Alex and Maya)
+  - Top half (9:8): Educational Manim animations
+  - Bottom half (9:8): Lip-synced celebrity presenter
+- **Storyboard-Based Generation** - Structured JSON timeline with visual states (not raw Manim code)
+- **Spatial Tracking System** - Prevents visual overlap, intelligent object placement
+- **Layout Engine** - Automatic Manim code generation with collision detection
+- **World-Class Educational Prompts** - Builds intuition, uses analogies, creates "aha" moments
+- Multi-voice conversational scripts (Teacher/Student or Alex/Maya)
+- Different TTS voices for each character
 - Accurate timestamp extraction with Whisper
-- Manim-aware visual instruction generation
 - Self-fixing Manim code generation (up to 3 retries)
-- Video stitching and compositing with ffmpeg
+- ZERO-tolerance audio/video sync (frame-perfect trimming)
 - Real-time progress updates via WebSocket
-- Subtitle support (SRT format)
+- Subtitle support (single-line, positioned at dividing line)
+
+## Quick Start
+
+### Prerequisites
+
+1. **Python 3.9+**
+2. **FFmpeg** (for audio/video processing)
+3. **LaTeX** (for Manim text rendering)
+
+### Installation
+
+```bash
+# Navigate to backend directory
+cd backend
+
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment variables
+cp .env.example .env
+# Edit .env and add:
+# - OPENAI_API_KEY (required)
+# - REPLICATE_API_TOKEN (required for celebrity videos)
+```
+
+Get API keys:
+- OpenAI: https://platform.openai.com/api-keys
+- Replicate: https://replicate.com/account/api-tokens
+
+### Running the Server
+
+```bash
+# Development mode
+python main.py
+
+# Or with custom port
+python main.py 8080
+
+# Production mode
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+Server will be available at `http://localhost:8000`
 
 ## Architecture
 
@@ -24,15 +74,17 @@ A powerful FastAPI backend for generating mobile-friendly 9:16 educational video
 backend/
 ├── main.py                          # FastAPI server
 ├── pipeline/
-│   ├── __init__.py
-│   ├── script_generator.py          # Multi-voice script generation
+│   ├── script_generator.py          # World-class educational script generation
 │   ├── audio_generator.py           # TTS audio synthesis
 │   ├── timestamp_extractor.py       # Whisper timestamp extraction
-│   ├── visual_script_generator.py   # Visual instruction generation
-│   ├── manim_generator.py           # Manim code generation & validation (9:16 support)
+│   ├── storyboard_generator.py      # Structured visual storyboard (JSON timeline)
+│   ├── spatial_tracker.py           # Canvas object tracking, overlap prevention
+│   ├── layout_engine.py             # Storyboard → Manim code with smart positioning
+│   ├── manim_generator.py           # Manim validation & rendering (9:8 support)
 │   ├── image_to_video_generator.py  # Celebrity image-to-video (Seedance/Kling)
-│   ├── lipsync_generator.py         # Audio-video lip-sync (Kling/Pixverse)
-│   └── video_stitcher.py            # Video compositing & stitching
+│   ├── lipsync_generator.py         # Audio-video lip-sync (tmappdev/Kling/Pixverse)
+│   ├── video_stitcher.py            # Video compositing & stitching
+│   └── resume_detector.py           # Resume from failed jobs
 ├── assets/
 │   ├── drake.jpg                    # Celebrity images
 │   └── sydneysweeney.png
@@ -40,112 +92,47 @@ backend/
 └── .env.example
 ```
 
-## Prerequisites
+## Pipeline Overview
 
-### System Dependencies
+### New Storyboard-Based Pipeline
 
-1. **Python 3.9+**
-   ```bash
-   python --version  # Verify Python 3.9 or higher
-   ```
+1. **Script Generation** (0-15%)
+   - Generate world-class educational script with GPT-4o
+   - Create engaging dialogue with intuition-building and "aha" moments
 
-2. **FFmpeg** (for audio/video processing)
-   ```bash
-   # macOS
-   brew install ffmpeg
+2. **Audio Generation** (15-35%)
+   - Generate audio for each character with different TTS voices
+   - Combine segments with appropriate silence
 
-   # Ubuntu/Debian
-   sudo apt-get update
-   sudo apt-get install ffmpeg
+3. **Timestamp Extraction** (35-45%)
+   - Extract precise timestamps using Whisper
+   - Generate SRT subtitle file
+   - Align script with timestamps
 
-   # Windows
-   # Download from https://ffmpeg.org/download.html
-   ```
+4. **Storyboard Generation** (45-48%)
+   - Generate structured visual timeline (JSON format)
+   - Specify objects, positions, animations, transitions
+   - Uses spatial tracking to prevent overlaps
 
-3. **LaTeX** (for Manim text rendering)
-   ```bash
-   # macOS
-   brew install --cask mactex
+5. **Manim Code Generation & Rendering** (48-60%)
+   - Layout engine converts storyboard → Manim code with smart positioning
+   - Render in 9:8 format (top half)
+   - Validate and self-fix (up to 3 retries)
 
-   # Ubuntu/Debian
-   sudo apt-get install texlive texlive-latex-extra texlive-fonts-extra texlive-science
+6. **Celebrity Video Generation** (60-75%)
+   - Generate video per segment using Seedance/Kling
+   - Alternate Drake/Sydney based on speaker voice
+   - Trim to EXACT audio duration (frame-perfect)
 
-   # Windows
-   # Download MiKTeX from https://miktex.org/download
-   ```
+7. **Lip-Sync Processing** (75-90%)
+   - Sync each celebrity video segment with audio using tmappdev
+   - ZERO-tolerance duration matching
+   - Trim to EXACT audio duration after sync
 
-### Python Dependencies
-
-Install all Python packages:
-```bash
-pip install -r requirements.txt
-```
-
-## Setup
-
-1. **Clone and navigate to backend directory**
-   ```bash
-   cd backend
-   ```
-
-2. **Create virtual environment (recommended)**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configure environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env and add:
-   # - OPENAI_API_KEY (required)
-   # - REPLICATE_API_TOKEN (required for celebrity videos)
-   # - IMAGE_TO_VIDEO_MODEL (optional, defaults to bytedance/seedance-1-pro-fast)
-   # - LIPSYNC_MODEL (optional, defaults to kwaivgi/kling-lip-sync)
-   ```
-
-   Get API keys:
-   - OpenAI: https://platform.openai.com/api-keys
-   - Replicate: https://replicate.com/account/api-tokens
-
-   **Model Costs** (per segment, defaults in parentheses):
-   - Image-to-video: Seedance ~$0.04 (default) | Kling v2.5 ~$0.20
-   - Lip-sync: tmappdev ~$0.03 (default) | Kling ~$0.03 | Pixverse ~$0.10
-   - **Total per 60s video** (12 segments): ~$0.84 with defaults 🎉
-
-   **Resume/Retry Feature:**
-   - If generation fails, you can resume from the last completed step
-   - Skips cleanup and reuses completed steps (saves time and money!)
-   - Just pass `resume_job_id` with the previous job ID in your request
-
-5. **Verify Manim installation**
-   ```bash
-   manim --version
-   ```
-
-## Running the Server
-
-### Development Mode
-```bash
-python main.py
-```
-
-Or with custom port:
-```bash
-python main.py 8080
-```
-
-### Production Mode
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
-```
-
-The server will be available at `http://localhost:8000`
+8. **Video Compositing** (90-100%)
+   - Stack 9:8 Manim video (top) and 9:8 celebrity video (bottom) → 9:16
+   - Add single-line subtitles at dividing line
+   - Create final mobile video
 
 ## API Documentation
 
@@ -153,9 +140,8 @@ Once the server is running, visit:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
-## API Endpoints
-
 ### POST /api/generate
+
 Generate an educational video.
 
 **Request Body:**
@@ -176,97 +162,93 @@ Generate an educational video.
 - `enable_subtitles` (bool): Add subtitles to final video
 - `celebrity` (string): `drake` or `sydney_sweeney`
 
-**Response:**
-```json
-{
-  "job_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "queued",
-  "message": "Video generation job started. Connect to WebSocket for progress updates."
-}
-```
-
 ### GET /api/jobs/{job_id}
+
 Get job status.
 
-**Response:**
-```json
-{
-  "job_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "processing",
-  "progress": 45,
-  "message": "Extracting timestamps...",
-  "video_url": null,
-  "error": null
-}
-```
-
 ### WebSocket /ws/{job_id}
+
 Real-time progress updates.
 
-**Messages:**
+### GET /api/videos/{job_id}/{filename}
+
+Download generated video.
+
+## Storyboard System
+
+The backend uses a storyboard-based approach to generate educational content:
+
+### Key Components
+
+1. **Storyboard Generator** - Creates structured JSON timeline from script
+   - Scene descriptions with pedagogical intent
+   - Object specifications (type, content, position, style)
+   - Animation timing synchronized with narration
+   - Cleanup management for spatial organization
+
+2. **Spatial Tracker** - Prevents visual overlaps
+   - 9:8 aspect ratio canvas (1080x960 pixels)
+   - 9x8 grid spatial indexing
+   - Object lifecycle tracking (start/end times)
+   - Intelligent layout suggestions
+
+3. **Layout Engine** - Converts storyboard to Manim code
+   - Multiple layout strategies (center-focused, grid, flow, etc.)
+   - Automatic collision detection
+   - Smart object placement
+   - Clean, working Manim code generation
+
+### Storyboard JSON Format
+
 ```json
-// Progress update
 {
-  "type": "progress",
-  "progress": 45,
-  "message": "Extracting timestamps..."
-}
-
-// Completion
-{
-  "type": "complete",
-  "video_url": "/api/videos/{job_id}/final_video.mp4"
-}
-
-// Error
-{
-  "type": "error",
-  "error": "Error message here"
+  "metadata": {
+    "topic": "Your Topic",
+    "duration": 60.0,
+    "num_scenes": 10
+  },
+  "scenes": [
+    {
+      "id": "scene_0",
+      "timestamp": {"start": 0.0, "end": 3.0},
+      "narration": "Introduction text",
+      "visual_type": "title|equation|diagram|shape|text",
+      "description": "Complete scene description",
+      "elements": ["Text", "MathTex"],
+      "region": "center|top_center|bottom_center|etc",
+      "cleanup": ["previous_scene_ids"],
+      "transitions": ["Write", "FadeIn"],
+      "properties": {
+        "font_size": 48,
+        "color": "BLUE"
+      }
+    }
+  ]
 }
 ```
 
-### GET /api/videos/{job_id}/{filename}
-Download generated video.
+### Canvas Regions
 
-## Pipeline Workflow
+The 9:8 canvas is divided into 9 regions (3x3 grid):
 
-1. **Script Generation** (0-15%)
-   - Generate multi-voice conversational script with GPT-4o
-   - Create engaging dialogue between Alex and Maya
+```
+┌─────────────┬─────────────┬─────────────┐
+│  TOP_LEFT   │ TOP_CENTER  │  TOP_RIGHT  │
+├─────────────┼─────────────┼─────────────┤
+│CENTER_LEFT  │   CENTER    │CENTER_RIGHT │
+├─────────────┼─────────────┼─────────────┤
+│ BOTTOM_LEFT │BOTTOM_CENTER│BOTTOM_RIGHT │
+└─────────────┴─────────────┴─────────────┘
+```
 
-2. **Audio Generation** (15-35%)
-   - Generate audio for each character with different TTS voices
-   - Combine segments with appropriate silence
-
-3. **Timestamp Extraction** (35-45%)
-   - Extract precise timestamps using Whisper
-   - Generate SRT subtitle file
-   - Align script with timestamps
-
-4. **Visual Instruction Generation** (45-50%)
-   - Generate Manim-aware visual instructions
-   - Specify animations, transitions, and layouts
-
-5. **Manim Animation Rendering** (50-60%)
-   - Generate and render Manim code in 9:16 format (top half)
-   - Validate and self-fix (up to 3 retries)
-
-6. **Celebrity Video Generation** (60-75%)
-   - Convert celebrity image to animated video using Kling v2.5
-   - Match audio duration with expressive talking motion
-
-7. **Lip-Sync Processing** (75-90%)
-   - Sync celebrity video with audio using Pixverse
-   - Ensure realistic lip movements
-
-8. **Video Compositing** (90-100%)
-   - Stack Manim video (top) and celebrity video (bottom)
-   - Create final 9:16 mobile video
-   - Add subtitles if enabled
+- Horizontal Range: -5.4 to 5.4 (10.8 units wide)
+- Vertical Range: -4.8 to 4.8 (9.6 units tall)
+- Center: (0, 0)
 
 ## Example Usage
 
 ### Using curl
+
 ```bash
 # Start video generation with Drake
 curl -X POST http://localhost:8000/api/generate \
@@ -287,6 +269,7 @@ curl -O http://localhost:8000/api/videos/{job_id}/final_video.mp4
 ```
 
 ### Using Python
+
 ```python
 import requests
 import websocket
@@ -326,35 +309,28 @@ The system uses different OpenAI TTS voices for each character:
 - **Alex** (boy): `onyx` voice - deep, warm
 - **Maya** (girl): `nova` voice - friendly, clear
 
-You can customize voices in `pipeline/audio_generator.py`:
-```python
-VOICE_MAP = {
-    "Alex": "onyx",
-    "Maya": "nova",
-    # Add more characters/voices as needed
-}
-```
-
 Available OpenAI TTS voices: `alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`
 
 ## Video Output Format
 
-- **Aspect Ratio**: 9:16 (mobile portrait)
+- **Aspect Ratio**: 9:16 (mobile portrait) = Two 9:8 halves stacked
 - **Resolution**: 720x1280 (medium), 1080x1920 (high)
-- **Top Half**: Educational Manim animations
-- **Bottom Half**: Lip-synced celebrity presenter
-- **Audio**: AAC 192kbps
-- **Subtitles**: Embedded (optional)
+- **Top Half (9:8)**: Educational Manim animations (720x640 or 1080x960)
+- **Bottom Half (9:8)**: Lip-synced celebrity presenter (720x640 or 1080x960)
+- **Audio**: AAC 192kbps, frame-perfectly synced
+- **Subtitles**: Single-line, positioned at middle dividing line (optional)
 
-## Celebrity Assets
+## Model Costs
 
-Available celebrities:
-- **Drake** (`"drake"`) - Male presenter
-- **Sydney Sweeney** (`"sydney_sweeney"`) - Female presenter
+**Per segment defaults:**
+- Image-to-video: Seedance ~$0.04 (default) | Kling v2.5 ~$0.20
+- Lip-sync: tmappdev ~$0.03 (default) | Kling ~$0.03 | Pixverse ~$0.10
+- **Total per 60s video** (12 segments): ~$0.84 with defaults
 
-To add new celebrities:
-1. Add high-quality front-facing portrait to `backend/assets/`
-2. Update `CELEBRITY_IMAGES` dict in `main.py`
+**Resume/Retry Feature:**
+- If generation fails, you can resume from the last completed step
+- Skips cleanup and reuses completed steps (saves time and money!)
+- Just pass `resume_job_id` with the previous job ID in your request
 
 ## Troubleshooting
 
@@ -379,6 +355,20 @@ To add new celebrities:
 - Ensure video was generated successfully before lip-sync
 - Check Replicate API logs for errors
 
+### Objects overlapping in animations
+- The spatial tracker should prevent this automatically
+- Check `storyboard.json` for region assignments
+- Ensure cleanup is specified for old objects
+- Review occupancy grid at key timestamps
+
+### Text going off screen or objects overlapping
+The system includes automatic text wrapping and spatial tracking:
+- Generated Manim code includes `wrap_text()` helper for 9:8 canvas
+- Spatial tracking prevents overlaps with `is_position_clear()` and `place_object()`
+- Canvas boundaries: x [-5.4, 5.4], y [-4.8, 4.8] for 9:8 aspect ratio
+- Safe text width: 8.8 units maximum
+- Built-in validation with up to 3 self-fixing retries
+
 ### WebSocket connection issues
 - Ensure no firewall blocking WebSocket connections
 - Check CORS settings in main.py
@@ -399,33 +389,87 @@ To add new celebrities:
    - 30-60 seconds is optimal for cost and processing time
    - Longer videos require more Replicate API credits
 
-3. **Monitor costs**
-   - Kling v2.5: ~$0.10-0.30 per video
-   - Pixverse lipsync: ~$0.05-0.15 per video
-   - Total: ~$0.15-0.45 per educational video
-
-4. **Processing time**
-   - Total pipeline: 2-4 minutes (vs 1-2 min without celebrity)
+3. **Processing time**
+   - Total pipeline: 2-4 minutes
+   - Storyboard generation: 2-5 seconds (same as old visual instructions)
+   - Layout engine: <100ms
    - Image-to-video: 30-60 seconds
    - Lip-sync: 20-40 seconds
 
 ## Development
-
-### Running tests
-```bash
-pytest tests/
-```
 
 ### Adding new pipeline modules
 1. Create module in `pipeline/` directory
 2. Import in `pipeline/__init__.py`
 3. Integrate into main pipeline in `main.py`
 
-### Custom Manim scenes
-Modify `pipeline/manim_generator.py` to customize:
-- Scene class structure
-- Animation styles
-- Default layouts
+### Working with Storyboards
+
+The storyboard system provides powerful tools for creating educational content:
+
+**Programmatic Creation:**
+```python
+from pipeline import StoryboardGenerator, LayoutEngine
+
+# Generate storyboard from script
+storyboard_gen = StoryboardGenerator(api_key)
+storyboard = await storyboard_gen.generate_storyboard(
+    script=script,
+    topic=topic,
+    aligned_timestamps=timestamps
+)
+
+# Convert to Manim code
+layout_engine = LayoutEngine()
+manim_code = layout_engine.process_storyboard(storyboard)
+```
+
+**Spatial Tracking:**
+```python
+from pipeline import SpatialTracker, ObjectType, Region
+
+tracker = SpatialTracker()
+
+# Add object
+tracker.add_object(
+    object_id="title",
+    object_type=ObjectType.TITLE,
+    content="Introduction",
+    position=(0, 4.0),
+    dimensions=(3.0, 0.8),
+    start_time=0.0,
+    end_time=3.0
+)
+
+# Find available space
+position = tracker.find_available_space(
+    dimensions=(2.0, 1.5),
+    time=5.0,
+    preferred_regions=[Region.CENTER]
+)
+```
+
+### Debugging Replicate Outputs
+
+All Replicate API calls automatically log URLs in two places:
+
+1. **Console Logs**: Look for `Replicate video URL:` and `Replicate lipsync URL:`
+2. **Metadata Files**: Check `output/{job_id}/celebrity_videos/segment_XXX_replicate_url.txt`
+
+URLs are valid for 24 hours. Download important videos within this timeframe.
+
+```bash
+# Find all Replicate URLs for a job
+find output/{job_id} -name "*_replicate_url.txt" -exec cat {} \;
+```
+
+## Backward Compatibility
+
+The system maintains 100% backward compatibility:
+- Old `visual_instructions.json` format still works
+- Resume detector supports both formats
+- No API changes required
+- Automatic format detection
 
 ## License
 
@@ -437,3 +481,4 @@ For issues and questions:
 - Check the API documentation at `/docs`
 - Review logs in the output directory
 - Ensure all system dependencies are installed
+- Check the troubleshooting section above

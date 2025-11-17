@@ -51,30 +51,96 @@ class ScriptGenerator:
             if progress_callback:
                 progress_callback("Generating conversational script...", 10)
 
-            system_prompt = """Create an educational script with 2-3 voices for a short ANIMATED video.
+            system_prompt = """You are a world-class educator creating extraordinary learning experiences.
 
-CRITICAL - Write for animation:
-- Speakers should POINT TO visuals ("Look at this equation", "See how these two fractions...", "Here's what happens when...")
-- Break into visual steps ("First, let's draw...", "Next, we'll add...", "Now watch as...")
-- Use concrete, drawable examples (actual numbers, specific shapes, real objects)
-- Build concepts progressively (step 1, step 2, step 3)
-- Short segments (1-2 sentences) to match visual changes
+Your mission: Explain concepts in a way that creates genuine "aha!" moments and builds deep, intuitive understanding.
 
-TEACHING STYLE:
-- One main explainer, others ask clarifying questions
-- Natural conversation flow
-- Simple, clear language
-- Each line connects to something visual
+PEDAGOGICAL PRINCIPLES (inspired by Grant Sanderson/3Blue1Brown, Sal Khan, Richard Feynman):
 
-Return JSON array:
-- "speaker": character name
-- "text": dialogue (naturally references what's shown)"""
+1. START WITH WHY
+   - Begin with motivation: "Why does this matter?" "Where do we see this in real life?"
+   - Connect to student's existing knowledge and experiences
+   - Make the topic feel relevant and exciting
+
+2. BUILD INTUITION BEFORE FORMALISM
+   - Start with concrete, relatable examples (actual numbers, real objects)
+   - Use powerful analogies that map to student's experience
+   - Only introduce abstract notation AFTER intuition is established
+
+3. GRADUAL COMPLEXITY SCALING
+   - Begin with the simplest possible case
+   - Add ONE layer of complexity at a time
+   - Each step should feel natural and inevitable
+
+4. VISUAL THINKING
+   - Every concept should connect to something visual/tangible
+   - Use phrases like "imagine...", "picture this...", "watch what happens when..."
+   - Guide attention: "notice that...", "see how...", "look at..."
+
+5. CONVERSATIONAL & ENGAGING
+   - Use a dialogue format between Teacher (enthusiastic explainer) and Student (curious learner)
+   - Student asks authentic questions, provides "aha" moments, relates concepts to real life
+   - Natural, energetic tone - like an excited friend sharing something cool
+
+6. ANTICIPATE CONFUSION
+   - Address common misconceptions directly
+   - Student asks clarifying questions at natural points of confusion
+   - Teacher validates questions and provides clear distinctions
+
+DIALOGUE CHARACTERS:
+- Teacher: Clear, enthusiastic, uses analogies, builds step-by-step
+- Student: Curious, asks clarifying questions, provides "aha" moments, relates to real life
+
+OUTPUT FORMAT (JSON):
+Return a JSON object with key "dialogue" containing an array of segments:
+[
+  {"speaker": "Teacher" or "Student", "text": "..."},
+  ...
+]
+
+TIMING:
+- Keep segments short (1-2 sentences) for visual pacing
+- Natural pauses for Student questions and reactions
+- Build to key insights with dramatic reveals"""
 
             user_prompt = f"""Topic: {topic}
-Duration: ~{duration_seconds} seconds
-Segments: {max(8, duration_seconds // 5)}
+Target Duration: ~{duration_seconds} seconds
+Target Segments: {max(10, duration_seconds // 4)} segments
 
-Write dialogue where speakers explain BY SHOWING - every line should reference a visual element or step."""
+CREATE AN EXTRAORDINARY LEARNING EXPERIENCE:
+
+Structure your dialogue like this:
+
+1. HOOK (Why this matters)
+   - Teacher: Start with a fascinating question or real-world connection
+   - Student: Express curiosity or share a relatable experience
+
+2. BUILD FROM SIMPLE
+   - Teacher: Introduce the SIMPLEST possible example with concrete numbers/objects
+   - Use visual language: "Let's draw...", "Imagine...", "Picture this..."
+
+3. DEVELOP INTUITION
+   - Teacher: Use powerful analogies and visual metaphors
+   - Student: Ask clarifying questions, make connections
+   - Build complexity gradually, one concept at a time
+
+4. AHA MOMENT
+   - Teacher: Reveal the key insight with enthusiasm
+   - Student: Express understanding with specific realization
+
+5. REINFORCE & EXTEND
+   - Teacher: Show how the concept applies more broadly
+   - Student: Ask about extensions or applications
+
+VISUAL INTEGRATION:
+Every line should naturally reference visuals:
+- "Watch what happens when we..."
+- "Notice how these two..."
+- "See this pattern?"
+- "Let's transform this into..."
+- "Look at how this changes..."
+
+Make learning feel like an exciting discovery journey!"""
 
             logger.info(f"Generating script for topic: {topic}")
 
@@ -96,7 +162,8 @@ Write dialogue where speakers explain BY SHOWING - every line should reference a
 
             # Handle different possible JSON structures - try multiple keys
             script = None
-            possible_keys = ["script", "dialogue", "segments", "conversation", "lines", "content", "data"]
+            # Prioritize "dialogue" as the new standard, but support legacy keys
+            possible_keys = ["dialogue", "script", "segments", "conversation", "lines", "content", "data"]
 
             if isinstance(parsed, list):
                 script = parsed

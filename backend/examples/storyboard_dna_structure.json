@@ -1,0 +1,575 @@
+{
+  "metadata": {
+    "title": "The Structure of DNA",
+    "topic": "DNA Double Helix",
+    "category": "biology",
+    "difficulty": "intermediate",
+    "duration": 50.0,
+    "target_audience": "high school biology students",
+    "learning_objectives": [
+      "Understand the double helix structure of DNA",
+      "Learn about base pairing (A-T, G-C)",
+      "Visualize the sugar-phosphate backbone"
+    ],
+    "prerequisites": [
+      "Basic cell biology",
+      "Understanding of molecules and chemical bonds"
+    ]
+  },
+  "global_settings": {
+    "background_color": "#1A1A2E",
+    "theme": "dark",
+    "font_family": "Arial",
+    "voice_settings": {
+      "voice_id": "science_narrator",
+      "speed": 0.95,
+      "pitch": 1.0
+    }
+  },
+  "segments": [
+    {
+      "id": "seg_intro",
+      "start_time": 0.0,
+      "end_time": 6.0,
+      "narration": {
+        "text": "DNA, the molecule of life, contains the genetic instructions for all living organisms. Let's explore its fascinating structure.",
+        "emphasis_words": ["DNA", "genetic instructions", "structure"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "title_dna",
+          "type": "text",
+          "content": "The Structure of DNA",
+          "action": "fade_in",
+          "position": "top",
+          "size": "large",
+          "timing": 0.5,
+          "duration": 2.0,
+          "style": {
+            "color": "#00D9FF",
+            "font_size": 64,
+            "font_weight": "bold"
+          },
+          "persist": false
+        },
+        {
+          "object_id": "subtitle",
+          "type": "text",
+          "content": "Deoxyribonucleic Acid",
+          "action": "fade_in",
+          "position": {
+            "x": 0,
+            "y": -1.5,
+            "z": 0
+          },
+          "timing": 2.0,
+          "duration": 1.5,
+          "style": {
+            "color": "#A8DADC",
+            "font_size": 36
+          },
+          "persist": false
+        }
+      ]
+    },
+    {
+      "id": "seg_double_helix_intro",
+      "start_time": 6.0,
+      "end_time": 14.0,
+      "narration": {
+        "text": "DNA has a distinctive double helix structure, discovered by Watson and Crick in 1953. Imagine two strands twisted around each other like a spiral staircase.",
+        "emphasis_words": ["double helix", "Watson and Crick", "spiral staircase"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "helix_left_strand",
+          "type": "diagram",
+          "content": {
+            "diagram_type": "curve",
+            "points": [
+              {"x": -1.5, "y": -3, "z": 0},
+              {"x": -1.2, "y": -2, "z": 0.5},
+              {"x": -1.5, "y": -1, "z": 0},
+              {"x": -1.8, "y": 0, "z": -0.5},
+              {"x": -1.5, "y": 1, "z": 0},
+              {"x": -1.2, "y": 2, "z": 0.5},
+              {"x": -1.5, "y": 3, "z": 0}
+            ]
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 2.0,
+          "duration": 3.0,
+          "style": {
+            "stroke_color": "#FF6B9D",
+            "stroke_width": 8,
+            "opacity": 1.0
+          },
+          "persist": true,
+          "layer": 1
+        },
+        {
+          "object_id": "helix_right_strand",
+          "type": "diagram",
+          "content": {
+            "diagram_type": "curve",
+            "points": [
+              {"x": 1.5, "y": -3, "z": 0},
+              {"x": 1.8, "y": -2, "z": -0.5},
+              {"x": 1.5, "y": -1, "z": 0},
+              {"x": 1.2, "y": 0, "z": 0.5},
+              {"x": 1.5, "y": 1, "z": 0},
+              {"x": 1.8, "y": 2, "z": -0.5},
+              {"x": 1.5, "y": 3, "z": 0}
+            ]
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 2.0,
+          "duration": 3.0,
+          "style": {
+            "stroke_color": "#C44569",
+            "stroke_width": 8,
+            "opacity": 1.0
+          },
+          "persist": true,
+          "layer": 1
+        },
+        {
+          "object_id": "helix_label",
+          "type": "text",
+          "content": "Double Helix",
+          "action": "fade_in",
+          "position": "bottom_right",
+          "timing": 5.0,
+          "duration": 1.5,
+          "style": {
+            "color": "#FFFFFF",
+            "font_size": 42
+          }
+        }
+      ]
+    },
+    {
+      "id": "seg_base_pairs",
+      "start_time": 14.0,
+      "end_time": 26.0,
+      "narration": {
+        "text": "The two strands are connected by base pairs. There are four bases: Adenine, Thymine, Guanine, and Cytosine. Adenine always pairs with Thymine, and Guanine always pairs with Cytosine.",
+        "emphasis_words": ["base pairs", "Adenine", "Thymine", "Guanine", "Cytosine", "always pairs"],
+        "pause_after": 0.8
+      },
+      "visual_states": [
+        {
+          "object_id": "base_pair_1_A",
+          "type": "shape",
+          "content": {
+            "shape_type": "circle",
+            "radius": 0.3
+          },
+          "action": "fade_in",
+          "position": {
+            "x": -1.5,
+            "y": 2,
+            "z": 0
+          },
+          "timing": 2.0,
+          "duration": 1.0,
+          "style": {
+            "fill_color": "#FFD93D",
+            "stroke_color": "#FFA500",
+            "stroke_width": 2,
+            "opacity": 0.9
+          },
+          "persist": true
+        },
+        {
+          "object_id": "base_label_A",
+          "type": "text",
+          "content": "A",
+          "action": "write",
+          "position": {
+            "x": -1.5,
+            "y": 2,
+            "z": 0
+          },
+          "timing": 2.5,
+          "duration": 0.5,
+          "style": {
+            "color": "#000000",
+            "font_size": 28,
+            "font_weight": "bold"
+          },
+          "persist": true
+        },
+        {
+          "object_id": "base_pair_1_T",
+          "type": "shape",
+          "content": {
+            "shape_type": "circle",
+            "radius": 0.3
+          },
+          "action": "fade_in",
+          "position": {
+            "x": 1.5,
+            "y": 2,
+            "z": 0
+          },
+          "timing": 3.5,
+          "duration": 1.0,
+          "style": {
+            "fill_color": "#6BCB77",
+            "stroke_color": "#4D96A9",
+            "stroke_width": 2,
+            "opacity": 0.9
+          },
+          "persist": true
+        },
+        {
+          "object_id": "base_label_T",
+          "type": "text",
+          "content": "T",
+          "action": "write",
+          "position": {
+            "x": 1.5,
+            "y": 2,
+            "z": 0
+          },
+          "timing": 4.0,
+          "duration": 0.5,
+          "style": {
+            "color": "#000000",
+            "font_size": 28,
+            "font_weight": "bold"
+          },
+          "persist": true
+        },
+        {
+          "object_id": "bond_AT",
+          "type": "shape",
+          "content": {
+            "shape_type": "line",
+            "start": {"x": -1.2, "y": 2},
+            "end": {"x": 1.2, "y": 2}
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 4.5,
+          "duration": 0.8,
+          "style": {
+            "stroke_color": "#FFFFFF",
+            "stroke_width": 2,
+            "opacity": 0.6
+          },
+          "persist": true
+        },
+        {
+          "object_id": "base_pair_2_G",
+          "type": "shape",
+          "content": {
+            "shape_type": "circle",
+            "radius": 0.3
+          },
+          "action": "fade_in",
+          "position": {
+            "x": -1.5,
+            "y": 0.5,
+            "z": 0
+          },
+          "timing": 6.0,
+          "duration": 1.0,
+          "style": {
+            "fill_color": "#FF6B9D",
+            "stroke_color": "#E91E63",
+            "stroke_width": 2,
+            "opacity": 0.9
+          },
+          "persist": true
+        },
+        {
+          "object_id": "base_label_G",
+          "type": "text",
+          "content": "G",
+          "action": "write",
+          "position": {
+            "x": -1.5,
+            "y": 0.5,
+            "z": 0
+          },
+          "timing": 6.5,
+          "duration": 0.5,
+          "style": {
+            "color": "#000000",
+            "font_size": 28,
+            "font_weight": "bold"
+          },
+          "persist": true
+        },
+        {
+          "object_id": "base_pair_2_C",
+          "type": "shape",
+          "content": {
+            "shape_type": "circle",
+            "radius": 0.3
+          },
+          "action": "fade_in",
+          "position": {
+            "x": 1.5,
+            "y": 0.5,
+            "z": 0
+          },
+          "timing": 7.5,
+          "duration": 1.0,
+          "style": {
+            "fill_color": "#A8E6CF",
+            "stroke_color": "#56AB2F",
+            "stroke_width": 2,
+            "opacity": 0.9
+          },
+          "persist": true
+        },
+        {
+          "object_id": "base_label_C",
+          "type": "text",
+          "content": "C",
+          "action": "write",
+          "position": {
+            "x": 1.5,
+            "y": 0.5,
+            "z": 0
+          },
+          "timing": 8.0,
+          "duration": 0.5,
+          "style": {
+            "color": "#000000",
+            "font_size": 28,
+            "font_weight": "bold"
+          },
+          "persist": true
+        },
+        {
+          "object_id": "bond_GC",
+          "type": "shape",
+          "content": {
+            "shape_type": "line",
+            "start": {"x": -1.2, "y": 0.5},
+            "end": {"x": 1.2, "y": 0.5}
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 8.5,
+          "duration": 0.8,
+          "style": {
+            "stroke_color": "#FFFFFF",
+            "stroke_width": 2,
+            "opacity": 0.6
+          },
+          "persist": true
+        }
+      ]
+    },
+    {
+      "id": "seg_base_pairing_rules",
+      "start_time": 26.0,
+      "end_time": 35.0,
+      "narration": {
+        "text": "This is called complementary base pairing. The specific pairing is crucial for DNA replication and ensuring genetic information is accurately copied.",
+        "emphasis_words": ["complementary base pairing", "crucial", "accurately copied"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "pairing_rule_1",
+          "type": "equation",
+          "content": "A \\leftrightarrow T",
+          "action": "write",
+          "position": "bottom_left",
+          "size": "medium",
+          "timing": 1.5,
+          "duration": 2.0,
+          "style": {
+            "color": "#FFD93D",
+            "font_size": 48
+          },
+          "persist": true
+        },
+        {
+          "object_id": "pairing_rule_2",
+          "type": "equation",
+          "content": "G \\leftrightarrow C",
+          "action": "write",
+          "position": "bottom_right",
+          "size": "medium",
+          "timing": 4.0,
+          "duration": 2.0,
+          "style": {
+            "color": "#FF6B9D",
+            "font_size": 48
+          },
+          "persist": true
+        },
+        {
+          "object_id": "highlight_AT_pair",
+          "type": "annotation",
+          "content": "",
+          "action": "indicate",
+          "position": {
+            "x": 0,
+            "y": 2,
+            "z": 0
+          },
+          "timing": 2.0,
+          "duration": 1.5,
+          "action_params": {
+            "color": "#FFD93D"
+          }
+        },
+        {
+          "object_id": "highlight_GC_pair",
+          "type": "annotation",
+          "content": "",
+          "action": "indicate",
+          "position": {
+            "x": 0,
+            "y": 0.5,
+            "z": 0
+          },
+          "timing": 4.5,
+          "duration": 1.5,
+          "action_params": {
+            "color": "#FF6B9D"
+          }
+        }
+      ]
+    },
+    {
+      "id": "seg_backbone",
+      "start_time": 35.0,
+      "end_time": 43.0,
+      "narration": {
+        "text": "The outer edges of DNA are made of sugar and phosphate molecules, forming the sugar-phosphate backbone that gives DNA its structure and stability.",
+        "emphasis_words": ["sugar-phosphate backbone", "structure", "stability"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "backbone_label_left",
+          "type": "text",
+          "content": "Sugar-Phosphate\nBackbone",
+          "action": "fade_in",
+          "position": {
+            "x": -3.5,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 2.0,
+          "duration": 1.5,
+          "style": {
+            "color": "#FF6B9D",
+            "font_size": 32
+          }
+        },
+        {
+          "object_id": "backbone_label_right",
+          "type": "text",
+          "content": "Sugar-Phosphate\nBackbone",
+          "action": "fade_in",
+          "position": {
+            "x": 3.5,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 2.0,
+          "duration": 1.5,
+          "style": {
+            "color": "#C44569",
+            "font_size": 32
+          }
+        },
+        {
+          "object_id": "helix_highlight_left",
+          "type": "annotation",
+          "content": "",
+          "action": "flash",
+          "position": {
+            "x": -1.5,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 3.5,
+          "duration": 2.0,
+          "action_params": {
+            "color": "#FF6B9D"
+          }
+        },
+        {
+          "object_id": "helix_highlight_right",
+          "type": "annotation",
+          "content": "",
+          "action": "flash",
+          "position": {
+            "x": 1.5,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 3.5,
+          "duration": 2.0,
+          "action_params": {
+            "color": "#C44569"
+          }
+        }
+      ]
+    },
+    {
+      "id": "seg_conclusion",
+      "start_time": 43.0,
+      "end_time": 50.0,
+      "narration": {
+        "text": "This elegant double helix structure allows DNA to store vast amounts of genetic information in a compact, stable form. Amazing, isn't it?",
+        "emphasis_words": ["elegant", "vast amounts", "compact", "stable"],
+        "pause_after": 1.0
+      },
+      "visual_states": [
+        {
+          "object_id": "final_message",
+          "type": "text",
+          "content": "DNA: The Blueprint of Life",
+          "action": "fade_in",
+          "position": "bottom",
+          "size": "large",
+          "timing": 3.0,
+          "duration": 2.0,
+          "style": {
+            "color": "#00D9FF",
+            "font_size": 56,
+            "font_weight": "bold"
+          }
+        },
+        {
+          "object_id": "dna_rotate",
+          "type": "diagram",
+          "content": {
+            "target": "helix_left_strand"
+          },
+          "action": "rotate",
+          "position": "center",
+          "timing": 0.0,
+          "duration": 7.0,
+          "action_params": {
+            "angle": 360
+          },
+          "transition": {
+            "type": "linear"
+          }
+        }
+      ],
+      "camera_movement": {
+        "type": "zoom",
+        "zoom_level": 1.2,
+        "duration": 3.0
+      }
+    }
+  ]
+}

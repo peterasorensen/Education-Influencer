@@ -60,7 +60,7 @@ class ManimGenerator:
 
         manim_code = None
         last_error = None
-        error_history = []  # Track all previous errors for context
+        conversation_history = []  # Maintain full conversation with LLM
 
         for attempt in range(self.MAX_RETRIES):
             try:
@@ -72,16 +72,20 @@ class ManimGenerator:
                         50 + (attempt * 3),
                     )
 
-                # Generate code
+                # Generate code (passes conversation history for context)
                 if attempt == 0:
-                    manim_code = await self._generate_initial_code(
+                    manim_code, conversation_history = await self._generate_initial_code(
                         visual_instructions, topic, target_duration
                     )
                 else:
-                    # Fix previous code based on error with full context
-                    manim_code = await self._fix_code(
-                        manim_code, last_error, visual_instructions, topic, attempt, error_history
+                    # Fix previous code based on error with FULL conversation context
+                    manim_code, conversation_history = await self._fix_code(
+                        manim_code, last_error, conversation_history, attempt
                     )
+
+                # ENFORCE canvas bounds - post-process code to add safety measures
+                logger.info("Applying canvas bounds enforcement...")
+                manim_code = self._enforce_canvas_bounds(manim_code)
 
                 # Save code
                 output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -96,13 +100,7 @@ class ManimGenerator:
                     logger.warning(
                         f"Syntax validation failed (attempt {attempt + 1}): {error_message}"
                     )
-                    last_error = error_message
-                    # Add to error history for context in next attempt
-                    error_history.append({
-                        "attempt": attempt + 1,
-                        "error": error_message,
-                        "stage": "syntax_validation"
-                    })
+                    last_error = f"Syntax Error:\n{error_message}"
                     continue
 
                 # Test render to catch runtime errors
@@ -117,24 +115,12 @@ class ManimGenerator:
                 logger.warning(
                     f"Runtime validation failed (attempt {attempt + 1}): {test_error}"
                 )
-                last_error = test_error
-                # Add to error history for context in next attempt
-                error_history.append({
-                    "attempt": attempt + 1,
-                    "error": test_error,
-                    "stage": "runtime_validation"
-                })
+                last_error = f"Runtime Error:\n{test_error}"
 
             except Exception as e:
                 # Catch exceptions during this attempt but continue loop
                 logger.warning(f"Exception during attempt {attempt + 1}: {e}")
-                last_error = str(e)
-                # Add to error history
-                error_history.append({
-                    "attempt": attempt + 1,
-                    "error": str(e),
-                    "stage": "exception"
-                })
+                last_error = f"Exception:\n{str(e)}"
                 continue
 
         # Max retries exceeded
@@ -144,9 +130,134 @@ class ManimGenerator:
 
     async def _generate_initial_code(
         self, visual_instructions: List[Dict], topic: str, target_duration: float = 60.0
-    ) -> str:
-        """Generate initial Manim code from visual instructions."""
+    ) -> Tuple[str, List[Dict]]:
+        """Generate initial Manim code from visual instructions.
+
+        Returns:
+            Tuple of (generated_code, conversation_history)
+        """
         system_prompt = """Generate Manim code for an educational animation.
+
+CRITICAL - 9:8 ASPECT RATIO CANVAS (NOT 16:9!):
+- Resolution: 1080x960 (high quality) - This is a 9:8 aspect ratio, NOT 16:9!
+- Canvas width: ~10.8 Manim units (from -5.4 to +5.4)
+- Canvas height: ~9.6 Manim units (from -4.8 to +4.8)
+- SAFE TEXT WIDTH: Maximum 8.8 units (leave 1 unit margin on each side)
+- Horizontal boundaries: -5.4 to +5.4 (NEVER exceed these!)
+- Vertical boundaries: -4.8 to +4.8 (NEVER exceed these!)
+
+TEXT WRAPPING (CRITICAL - PREVENTS TEXT GOING OFF SCREEN):
+ALWAYS wrap text to prevent overflow. Use this Python helper function at the top of your code:
+
+```python
+def wrap_text(text, font_size=36, max_width=8.8):
+    '''Wrap text to prevent off-screen overflow on 9:8 canvas'''
+    # Calculate max characters per line based on font size
+    # Font size 36 = ~60 chars, font size 48 = ~45 chars, font size 24 = ~90 chars
+    base_chars_at_36 = 60
+    max_chars_per_line = int(base_chars_at_36 * (36 / font_size))
+
+    # Ensure we don't exceed canvas width (worst case: 0.08 units per char)
+    absolute_max = int(max_width / (0.08 * font_size / 36))
+    max_chars_per_line = min(max_chars_per_line, absolute_max)
+
+    # If text fits on one line, return as-is
+    if len(text) <= max_chars_per_line:
+        return text
+
+    # Break text into words and wrap
+    words = text.split()
+    lines = []
+    current_line = []
+    current_length = 0
+
+    for word in words:
+        word_length = len(word)
+        space_needed = word_length + (1 if current_line else 0)
+
+        if current_length + space_needed <= max_chars_per_line:
+            current_line.append(word)
+            current_length += space_needed
+        else:
+            if current_line:
+                lines.append(" ".join(current_line))
+            current_line = [word]
+            current_length = word_length
+
+    if current_line:
+        lines.append(" ".join(current_line))
+
+    return "\\n".join(lines)
+```
+
+Then wrap ALL text before creating Text objects:
+```python
+# BAD - text might go off screen:
+text = Text("This is a long sentence that might overflow the canvas boundaries", font_size=36)
+
+# GOOD - text is wrapped to fit:
+wrapped = wrap_text("This is a long sentence that might overflow the canvas boundaries", font_size=36)
+text = Text(wrapped, font_size=36)
+```
+
+SPATIAL AWARENESS (PREVENT OVERLAPS):
+Track object positions and check for overlaps before placing:
+```python
+# Keep a list of placed objects with their bounding boxes
+placed_objects = []
+
+# Before creating a new object, check if position is clear
+def is_position_clear(x, y, width, height):
+    for obj_bbox in placed_objects:
+        # Check if bounding boxes overlap
+        if (abs(x - obj_bbox['x']) < (width + obj_bbox['width']) / 2 and
+            abs(y - obj_bbox['y']) < (height + obj_bbox['height']) / 2):
+            return False
+    return True
+
+# When placing an object, register it
+def place_object(obj, x, y, width, height):
+    obj.move_to(np.array([x, y, 0]))
+    placed_objects.append({'x': x, 'y': y, 'width': width, 'height': height, 'obj': obj})
+    return obj
+
+# Use this when creating objects
+if is_position_clear(0, 2, 4, 1):
+    title = Text(wrap_text("Introduction", font_size=48), font_size=48)
+    place_object(title, 0, 2, 4, 1)
+```
+
+POSITIONING GUIDELINES FOR 9:8 CANVAS:
+- Top region: y = 3.5 to 4.5 (use for titles)
+- Upper middle: y = 1.5 to 3.0 (use for equations/main content)
+- Center: y = -1.0 to 1.5 (use for diagrams)
+- Lower middle: y = -3.0 to -1.0 (use for explanations)
+- Bottom: y = -4.5 to -3.0 (use for labels/notes)
+- Left side: x = -4.0 to -2.0
+- Center: x = -2.0 to 2.0
+- Right side: x = 2.0 to 4.0
+
+OBJECT CLEANUP (CRITICAL - PREVENTS OVERCROWDING):
+- Remove old objects before adding new ones in the same region
+- Use FadeOut + self.remove() to completely remove objects
+- Track what's on screen and clean up regularly:
+```python
+# Keep list of active objects
+active_objects = []
+
+# When adding new content, remove old if in same region
+if active_objects:
+    self.play(*[FadeOut(obj) for obj in active_objects])
+    for obj in active_objects:
+        self.remove(obj)
+    active_objects.clear()
+
+# Add new content and track it
+new_obj = Text(wrap_text("New content", font_size=36), font_size=36)
+place_object(new_obj, 0, 2, 3, 0.8)
+active_objects.append(new_obj)
+self.play(FadeIn(new_obj))
+```
 
 CRITICAL TIMING REQUIREMENTS:
 Track elapsed time properly:
@@ -185,6 +296,7 @@ REQUIRED IMPORTS AT TOP OF FILE:
 from manim import *
 import random
 import math
+import numpy as np
 ```
 
 SAFE VISUAL TECHNIQUES:
@@ -255,6 +367,31 @@ Total duration: {target_duration} seconds
 Timestamped visual instructions:
 {instructions_json}
 
+CRITICAL IMPLEMENTATION REQUIREMENTS FOR 9:8 CANVAS:
+
+1. TEXT WRAPPING (MANDATORY):
+   - Include the wrap_text() helper function at the TOP of your class (before construct method)
+   - Wrap ALL text using wrap_text() before creating Text objects
+   - Example: title = Text(wrap_text("Long title text here", font_size=48), font_size=48)
+   - Never exceed 8.8 units width for text
+
+2. SPATIAL TRACKING (MANDATORY):
+   - Include the is_position_clear() and place_object() helper functions
+   - Initialize placed_objects = [] at start of construct()
+   - Use place_object() for EVERY object you create
+   - Check is_position_clear() before placing if avoiding overlaps is critical
+
+3. OBJECT LIFECYCLE (MANDATORY):
+   - Initialize active_objects = [] at start of construct()
+   - Add objects to active_objects when created
+   - Remove old objects from active_objects before adding new ones in the same region
+   - Use: self.play(*[FadeOut(obj) for obj in active_objects]) to clean up
+
+4. POSITIONING (RESPECT 9:8 BOUNDARIES):
+   - NEVER use positions outside: x ∈ [-5.4, 5.4], y ∈ [-4.8, 4.8]
+   - Use the positioning guidelines (top region for titles, center for main content, etc.)
+   - Leave margins: don't place objects at exact boundaries
+
 CRITICAL BANS - THESE WILL CRASH (DO NOT USE):
 - AnnularSector → BANNED! Use Sector(angle=PI/3) or Annulus(inner_radius=0.5, outer_radius=1)
 - ShowCreation → BANNED! Use Create instead
@@ -278,19 +415,78 @@ CONTENT CLEANUP (READ "cleanup" FIELD):
 - If cleanup says "clear screen" → fade out all previous objects
 - Keep track of all created objects so you can remove them later
 
-Examples of creative implementation:
-- "draw fraction 1/2" → MathTex(r"\\frac{{1}}{{2}}") with Write animation, maybe add color
-- "fraction bar divided in half" → Colorful Rectangle with Line, animate the division
-- "show multiplication" → MathTex with smooth fade-in, maybe highlight the operation
-- "water molecule" → Colored circles (H=white, O=red) with labels, show bonds as lines
-- "pie slice" → Sector(angle=PI/4, color=BLUE) NOT AnnularSector
-- "ring/donut" → Annulus(inner_radius=0.5, outer_radius=1.5) NOT AnnularSector
+CONCRETE CODE EXAMPLES (copy these patterns!):
 
-SPATIAL POSITIONING (CRITICAL - KEEP ON SCREEN & MANAGE OLD CONTENT):
-- Screen boundaries: -7 to +7 horizontal, -4 to +4 vertical
-- SAFE positioning: .to_edge(UP/DOWN/LEFT/RIGHT), .move_to(ORIGIN), .shift(UP/DOWN/LEFT/RIGHT)
-- UNSAFE: Large multipliers like DOWN*3, UP*4, LEFT*5 will go OFF SCREEN!
-- Layout zones: TOP (.to_edge(UP)), CENTER (ORIGIN), BOTTOM (DOWN*1 max)
+1. Draw and shade half a rectangle:
+```python
+rect = Rectangle(width=4, height=2)
+self.play(Create(rect))
+# Divide in half with a vertical line
+divider = Line(rect.get_top(), rect.get_bottom())
+self.play(Create(divider))
+# Shade left half - use a NEW rectangle, don't try to clip!
+left_half = Rectangle(width=2, height=2).align_to(rect, LEFT).set_fill(BLUE, opacity=0.5)
+self.play(FadeIn(left_half))
+```
+
+2. Draw fraction with visual representation:
+```python
+fraction = MathTex(r"\\frac{{3}}{{4}}").set_color(RED)
+self.play(Write(fraction))
+# Show 4 boxes, shade 3 of them
+boxes = VGroup(*[Square(side_length=0.5).shift(RIGHT*i*0.6) for i in range(4)])
+self.play(Create(boxes))
+shaded = VGroup(*[boxes[i].copy().set_fill(RED, opacity=0.6) for i in range(3)])
+self.play(FadeIn(shaded))
+```
+
+3. Highlight or emphasize something:
+```python
+obj = Circle()
+self.play(Indicate(obj))  # Pulse effect
+# OR
+self.play(Circumscribe(obj))  # Draw circle around it
+# OR
+highlight = SurroundingRectangle(obj, color=YELLOW)
+self.play(Create(highlight))
+```
+
+4. Grid of squares:
+```python
+# 4x2 grid
+grid = VGroup(*[Square(side_length=0.5).move_to(RIGHT*i*0.6 + UP*j*0.6)
+                for i in range(4) for j in range(2)])
+self.play(LaggedStart(*[Create(sq) for sq in grid]))
+# Shade first 3 squares
+for i in range(3):
+    if i < len(grid):  # ALWAYS check length!
+        self.play(grid[i].animate.set_fill(BLUE, opacity=0.5))
+```
+
+5. Water molecule or atoms:
+```python
+oxygen = Circle(radius=0.5, color=RED).set_fill(RED, opacity=0.8)
+h1 = Circle(radius=0.3, color=WHITE).set_fill(WHITE, opacity=0.8).next_to(oxygen, LEFT)
+h2 = Circle(radius=0.3, color=WHITE).set_fill(WHITE, opacity=0.8).next_to(oxygen, RIGHT)
+bond1 = Line(oxygen.get_left(), h1.get_right())
+bond2 = Line(oxygen.get_right(), h2.get_left())
+molecule = VGroup(oxygen, h1, h2, bond1, bond2)
+self.play(LaggedStart(*[FadeIn(obj) for obj in molecule]))
+```
+
+CRITICAL - DO NOT HALLUCINATE:
+- NO .clip_line(), .clip_region(), .clip_path() - these don't exist!
+- To show partial shapes, create NEW shapes that are already the right size
+- To shade part of a rectangle, create a smaller rectangle with .set_fill()
+- Example: "shade left half" → Rectangle(width=2).align_to(original, LEFT).set_fill(BLUE, 0.5)
+
+SPATIAL POSITIONING (CRITICAL - 9:8 CANVAS BOUNDARIES):
+- 9:8 aspect ratio boundaries: x ∈ [-5.4, 5.4], y ∈ [-4.8, 4.8] (NEVER EXCEED!)
+- This is NOT 16:9! Horizontal space is MORE LIMITED than standard Manim
+- SAFE positioning: .move_to(np.array([x, y, 0])) with x ∈ [-4.5, 4.5], y ∈ [-4.0, 4.0]
+- UNSAFE: .to_edge(LEFT/RIGHT) might go off screen! Use explicit coordinates instead
+- UNSAFE: Large multipliers like DOWN*3, UP*4, LEFT*5 will DEFINITELY go OFF SCREEN!
+- Layout zones for 9:8: TOP (y=3.5 to 4.5), UPPER (y=1.5 to 3.0), CENTER (y=-1.0 to 1.5), LOWER (y=-3.0 to -1.0), BOTTOM (y=-4.5 to -3.0)
 
 REMOVE OLD CONTENT (CRITICAL):
 - Intro titles: FadeOut after 2-3 seconds, don't let them stay forever
@@ -317,134 +513,300 @@ Class name: EducationalScene"""
 
         logger.info("Generating initial Manim code")
 
+        # Build conversation history
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
         response = await self.client.chat.completions.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            messages=messages,
             temperature=0.7,
         )
 
         code = response.choices[0].message.content
 
+        # Add assistant response to conversation history
+        messages.append({"role": "assistant", "content": code})
+
         # Extract code from markdown if present
         code = self._extract_code_from_markdown(code)
 
         logger.debug(f"Generated code length: {len(code)} characters")
-        return code
+        return code, messages
 
     async def _fix_code(
         self,
         broken_code: str,
         error_message: str,
-        visual_instructions: List[Dict],
-        topic: str,
+        conversation_history: List[Dict],
         attempt: int,
-        error_history: List[Dict],
-    ) -> str:
-        """Fix Manim code based on error feedback with context from previous attempts."""
-        system_prompt = """Fix this Manim code based on the error. Return ONLY fixed code.
+    ) -> Tuple[str, List[Dict]]:
+        """Fix Manim code based on error feedback with full conversation context.
 
-COMMON FIXES:
-- NameError 'ShowCreation' → Replace with Create
-- NameError 'GrowArrow' → Replace with Create or FadeIn
-- NameError 'Sparkle' → Replace with Flash or Indicate for emphasis effects
-- NameError 'ParticleSystem' → Replace with VGroup of Dots animated individually
-  Example: particles = VGroup(*[Dot().shift(random_point) for _ in range(20)])
-           self.play(LaggedStart(*[FadeIn(p) for p in particles]))
-- NameError 'random' → Add imports at top: from manim import *; import random; import math
-- TypeError with AnnularSector → Use Sector or Arc instead
-- TypeError with Surface/ParametricSurface → Use basic shapes instead
-- TypeError with set_fill_by_value → Use .set_fill(color, opacity)
-- TypeError 'unexpected keyword argument stretch' → CRITICAL! Remove stretch parameter from set_width/set_height
-  OLD: rect.set_width(value, stretch=True, about_edge=LEFT)
-  NEW: rect.scale_to_fit_width(value).align_to(original, LEFT)
-- OSError with SVG/image files → NEVER use external files, draw with shapes instead
-- Missing imports → ALWAYS include at top: from manim import *; import random; import math
+        Args:
+            broken_code: The code that failed
+            error_message: The error that occurred
+            conversation_history: Full conversation with LLM (maintains context)
+            attempt: Current attempt number
 
-CRITICAL - IndexError 'list index out of range' FIX:
-This is THE MOST COMMON ERROR. Fix ALL array/list accesses:
-1. Find ALL instances of direct indexing: items[0], group[3], objects[i], etc.
-2. Replace with safe access patterns:
-   - OLD: group[2].set_color(RED)
-   - NEW: if len(group) > 2: group[2].set_color(RED)
-   - BETTER: for obj in group: obj.set_color(RED)  # iterate instead
-3. For loops with indices:
-   - OLD: for i in range(5): group[i].shift(UP*i)
-   - NEW: for i, obj in enumerate(group): obj.shift(UP*i)
-4. NEVER assume a VGroup/list has any specific length!
+        Returns:
+            Tuple of (fixed_code, updated_conversation_history)
+        """
+        # Continue the conversation with the error as user feedback
+        error_prompt = f"""The code you generated has an error. Here's what happened:
 
-SAFE REPLACEMENTS:
-- AnnularSector → Sector(angle=PI/4) or Arc
-- Complex 3D surfaces → Cube(), Sphere(), Prism()
-- Parametric functions → Basic shapes with positioning
-- Advanced camera → Simple scene without camera manipulation
-- SVGMobject("file.svg") → Draw the shape using Circle, Polygon, VGroup, etc.
-- ImageMobject → Not allowed, use shapes only
-- group[index] → if len(group) > index: group[index] OR use enumerate/iteration
-- obj.set_width(val, stretch=True) → obj.scale_to_fit_width(val)
-- obj.set_height(val, stretch=True) → obj.scale_to_fit_height(val)
-- For half-width: obj.copy().scale(0.5) instead of set_width(width/2, stretch=True)
-
-IMPORTANT - YOU ARE IN A FIX LOOP:
-The code you're seeing has already been attempted and FAILED. This is a RETRY attempt.
-You must analyze what went wrong and try a DIFFERENT approach than before.
-Don't just make the same fix again - the error shows your previous fix didn't work."""
-
-        # Build context about previous attempts
-        context_lines = []
-        if error_history:
-            context_lines.append("\n=== PREVIOUS FIX ATTEMPTS (THESE ALL FAILED) ===")
-            for i, err_info in enumerate(error_history, 1):
-                context_lines.append(
-                    f"Attempt {err_info['attempt']} ({err_info['stage']}): {err_info['error']}"
-                )
-            context_lines.append("=== END PREVIOUS ATTEMPTS ===\n")
-            context_lines.append(
-                f"This is now attempt {attempt + 1}. The previous {len(error_history)} attempt(s) failed."
-            )
-            context_lines.append(
-                "CRITICAL: You must try a DIFFERENT fix than before. The current code below is the result of your previous fix that FAILED."
-            )
-
-        previous_context = "\n".join(context_lines) if context_lines else ""
-
-        user_prompt = f"""{previous_context}
-
-CURRENT ERROR (from your previous fix attempt):
+ERROR:
 {error_message}
 
-CURRENT CODE (this is your PREVIOUS fix that failed):
+FAILED CODE:
 ```python
 {broken_code}
 ```
 
-INSTRUCTIONS:
-1. Analyze what you tried before (if this is a retry)
-2. Understand why that fix didn't work
-3. Try a DIFFERENT approach this time
-4. Make sure to address the CURRENT error, not just repeat the same fix
-5. Return ONLY the fixed Python code, no explanations
+This is attempt {attempt + 1}/3. Please analyze the error carefully and fix the code.
 
-Fix the error using safe Manim patterns. Keep visuals similar but use reliable methods."""
+CRITICAL DEBUGGING TIPS FOR THIS ERROR:
+- If IndexError: You're accessing a list/VGroup index that doesn't exist. NEVER use direct indexing like items[4]. Instead iterate with "for item in items:" or check length first.
+- If NameError: You used a deprecated/non-existent function. Check the system prompt for replacements (ShowCreation→Create, GrowArrow→Create, etc).
+- If TypeError with 'stretch': Remove the stretch parameter from set_width/set_height. Use .scale_to_fit_width() instead.
+- If AttributeError: The method doesn't exist. Use basic Manim methods only.
 
-        logger.info(f"Fixing Manim code based on error feedback (attempt {attempt + 1}, {len(error_history)} previous errors)")
+Return ONLY the fixed Python code, no explanations."""
 
+        logger.info(f"Fixing Manim code based on error (attempt {attempt + 1})")
+
+        # Add error feedback to conversation history (continue the conversation)
+        conversation_history.append({"role": "user", "content": error_prompt})
+
+        # Continue conversation with full context
         response = await self.client.chat.completions.create(
             model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            messages=conversation_history,  # Full conversation history!
             temperature=0.7,
         )
 
         fixed_code = response.choices[0].message.content
+
+        # Add assistant's fix to conversation history
+        conversation_history.append({"role": "assistant", "content": fixed_code})
+
+        # Extract code from markdown if present
         fixed_code = self._extract_code_from_markdown(fixed_code)
 
         logger.debug(f"Fixed code attempt {attempt + 1}, length: {len(fixed_code)} characters")
-        return fixed_code
+        return fixed_code, conversation_history
+
+    def _validate_canvas_constraints(self, code: str) -> Tuple[bool, List[str]]:
+        """
+        Validate that code respects 9:8 canvas constraints.
+
+        Args:
+            code: The generated Manim code
+
+        Returns:
+            Tuple of (is_valid, list_of_errors)
+            Only CRITICAL errors cause validation to fail
+        """
+        errors = []
+        critical_errors = []
+
+        # Strip comments for validation (to avoid false positives from commented code)
+        code_no_comments = re.sub(r'#.*$', '', code, flags=re.MULTILINE)
+
+        # Check 1: wrap_text function should be included
+        if 'def wrap_text' not in code:
+            critical_errors.append("CRITICAL: wrap_text() helper function not included - text WILL go off screen!")
+
+        # Check 2: Find long text strings that should be wrapped
+        # Find Text() calls with long strings (>50 chars)
+        text_pattern = r'Text\(["\']([^"\']{50,})["\']'
+        long_texts = re.findall(text_pattern, code_no_comments)
+        if long_texts:
+            # Check if wrap_text is actually being used
+            if 'wrap_text(' not in code_no_comments:
+                critical_errors.append(f"CRITICAL: Found {len(long_texts)} long Text() strings without wrap_text() usage. Examples: {long_texts[:2]}")
+
+        # Check 3: Dangerous positioning methods that can go off-screen on 9:8 canvas
+        dangerous_methods = [
+            (r'\.to_edge\(', 'to_edge() can place objects off-screen on 9:8 canvas'),
+            (r'\.to_corner\(', 'to_corner() can place objects off-screen on 9:8 canvas'),
+        ]
+        for pattern, warning in dangerous_methods:
+            if re.search(pattern, code_no_comments):
+                critical_errors.append(f"CRITICAL: Using {warning}. Use explicit coordinates instead.")
+
+        # Check 4: Check for extreme position values
+        # Look for move_to, shift with large values
+        position_pattern = r'(?:move_to|shift)\([^)]*?([-\d.]+)\s*\*\s*(?:UP|DOWN|LEFT|RIGHT)'
+        position_multipliers = re.findall(position_pattern, code)
+        for multiplier in position_multipliers:
+            try:
+                val = abs(float(multiplier))
+                if val > 5.0:
+                    critical_errors.append(f"CRITICAL: Position multiplier {multiplier} exceeds safe bounds for 9:8 canvas (max ±4.5)")
+            except:
+                pass
+
+        # Check 5: Spatial tracking functions (warnings only - not critical)
+        if 'def is_position_clear' not in code:
+            errors.append("INFO: is_position_clear() helper function not included - objects may overlap")
+
+        if 'def place_object' not in code:
+            errors.append("INFO: place_object() helper function not included - no spatial tracking")
+
+        # Check 6: Active objects tracking (warnings only - not critical)
+        if 'active_objects = []' not in code and 'active_objects=[]' not in code:
+            errors.append("INFO: active_objects list not initialized - no object lifecycle management")
+
+        # Combine all messages for logging
+        all_messages = critical_errors + errors
+
+        # Only fail validation if there are CRITICAL errors
+        # Warnings/Info are logged but don't cause failure
+        return len(critical_errors) == 0, all_messages
+
+    def _enforce_canvas_bounds(self, code: str) -> str:
+        """
+        Post-process generated code to enforce 9:8 canvas constraints.
+        Adds safety wrappers and helper functions if missing.
+
+        Args:
+            code: The generated Manim code
+
+        Returns:
+            Code with enforced canvas constraints
+        """
+        logger.info("Enforcing canvas bounds on generated code")
+
+        # Template for helper functions that should ALWAYS be included
+        HELPER_FUNCTIONS = '''
+def wrap_text(text, font_size=36, max_width=8.8):
+    """Wrap text to prevent off-screen overflow on 9:8 canvas"""
+    base_chars_at_36 = 60
+    max_chars_per_line = int(base_chars_at_36 * (36 / font_size))
+    absolute_max = int(max_width / (0.08 * font_size / 36))
+    max_chars_per_line = min(max_chars_per_line, absolute_max)
+
+    if len(text) <= max_chars_per_line:
+        return text
+
+    words = text.split()
+    lines = []
+    current_line = []
+    current_length = 0
+
+    for word in words:
+        word_length = len(word)
+        space_needed = word_length + (1 if current_line else 0)
+
+        if current_length + space_needed <= max_chars_per_line:
+            current_line.append(word)
+            current_length += space_needed
+        else:
+            if current_line:
+                lines.append(" ".join(current_line))
+            current_line = [word]
+            current_length = word_length
+
+    if current_line:
+        lines.append(" ".join(current_line))
+
+    return "\\n".join(lines)
+
+def clamp_position(x, y, max_x=4.5, max_y=4.0):
+    """Clamp position to safe canvas bounds"""
+    return (
+        max(-max_x, min(max_x, x)),
+        max(-max_y, min(max_y, y))
+    )
+'''
+
+        # Step 1: Ensure numpy is imported (needed for np.array in position replacements)
+        if 'import numpy as np' not in code:
+            logger.info("Adding numpy import")
+            # Add after other imports
+            import_match = re.search(r'(import (?:random|math))', code)
+            if import_match:
+                insert_pos = import_match.end()
+                code = code[:insert_pos] + '\nimport numpy as np' + code[insert_pos:]
+
+        # Step 2: Add helper functions if not present
+        if 'def wrap_text' not in code:
+            logger.info("Adding wrap_text() helper function")
+            # Insert after imports and before class definition
+            class_match = re.search(r'(class \w+\(Scene\):)', code)
+            if class_match:
+                insert_pos = class_match.start()
+                code = code[:insert_pos] + HELPER_FUNCTIONS + '\n' + code[insert_pos:]
+
+        # Step 3: Auto-wrap long Text() calls
+        # Find Text("long string", ...) and wrap with wrap_text()
+        def wrap_long_text(match):
+            text_content = match.group(1)
+            rest = match.group(2)
+
+            # Only wrap if text is longer than 50 chars
+            if len(text_content) > 50:
+                # Extract font_size if present
+                font_size_match = re.search(r'font_size\s*=\s*(\d+)', rest)
+                font_size = font_size_match.group(1) if font_size_match else '36'
+
+                logger.info(f"Auto-wrapping long text: {text_content[:50]}...")
+                # Keep the rest of the parameters intact
+                if rest.strip():
+                    return f'Text(wrap_text("{text_content}", font_size={font_size}), {rest.lstrip(", ")})'
+                else:
+                    return f'Text(wrap_text("{text_content}", font_size={font_size}))'
+            return match.group(0)
+
+        # Pattern: Text("any text"[, other_params])
+        # Use non-greedy match and handle optional parameters
+        code = re.sub(
+            r'Text\("([^"]+)"((?:\s*,\s*[^)]*)?)\)',
+            wrap_long_text,
+            code
+        )
+
+        # Step 4: Replace dangerous positioning methods
+        # Replace .to_edge() with explicit safe coordinates
+        def replace_to_edge(match):
+            direction = match.group(1)
+            logger.info(f"Replacing .to_edge({direction}) with safe coordinates")
+
+            # Map to safe coordinates on 9:8 canvas
+            safe_positions = {
+                'UP': '.move_to(np.array([0, 3.5, 0]))',
+                'DOWN': '.move_to(np.array([0, -3.5, 0]))',
+                'LEFT': '.move_to(np.array([-4.0, 0, 0]))',
+                'RIGHT': '.move_to(np.array([4.0, 0, 0]))',
+            }
+            return safe_positions.get(direction, match.group(0))
+
+        code = re.sub(r'\.to_edge\((UP|DOWN|LEFT|RIGHT)\)', replace_to_edge, code)
+
+        # Replace .to_corner() with explicit safe coordinates
+        def replace_to_corner(match):
+            corner = match.group(1)
+            logger.info(f"Replacing .to_corner({corner}) with safe coordinates")
+
+            safe_corners = {
+                'UP + LEFT': '.move_to(np.array([-4.0, 3.5, 0]))',
+                'UP + RIGHT': '.move_to(np.array([4.0, 3.5, 0]))',
+                'DOWN + LEFT': '.move_to(np.array([-4.0, -3.5, 0]))',
+                'DOWN + RIGHT': '.move_to(np.array([4.0, -3.5, 0]))',
+                'UL': '.move_to(np.array([-4.0, 3.5, 0]))',
+                'UR': '.move_to(np.array([4.0, 3.5, 0]))',
+                'DL': '.move_to(np.array([-4.0, -3.5, 0]))',
+                'DR': '.move_to(np.array([4.0, -3.5, 0]))',
+            }
+            return safe_corners.get(corner, match.group(0))
+
+        code = re.sub(r'\.to_corner\((UP \+ LEFT|UP \+ RIGHT|DOWN \+ LEFT|DOWN \+ RIGHT|UL|UR|DL|DR)\)', replace_to_corner, code)
+
+        logger.info("Canvas bounds enforcement complete")
+        return code
 
     async def _validate_code(self, code_path: Path) -> Tuple[bool, Optional[str]]:
         """
@@ -487,6 +849,13 @@ Fix the error using safe Manim patterns. Keep visuals similar but use reliable m
             if "def construct" not in code_content:
                 return False, "Missing construct() method"
 
+            # CRITICAL: Validate canvas constraints (9:8 aspect ratio)
+            is_valid, constraint_errors = self._validate_canvas_constraints(code_content)
+            if not is_valid:
+                error_msg = "Canvas constraint violations:\n" + "\n".join(constraint_errors)
+                logger.warning(error_msg)
+                return False, error_msg
+
             logger.info("Code validation passed")
             return True, None
 
@@ -507,14 +876,14 @@ Fix the error using safe Manim patterns. Keep visuals similar but use reliable m
             Tuple of (is_valid, error_message)
         """
         try:
-            # Quick render test - just generate first frame
+            # Quick render test - render FULL animation at low quality to catch all runtime errors
+            # Previously only rendered first frame "-n 0,1" which missed errors later in animation
             cmd = [
                 "manim",
                 str(code_path),
                 "EducationalScene",
-                "-ql",  # Low quality for fast test
-                "--format=png",  # Just render an image
-                "-n", "0,1",  # Only first frame
+                "-ql",  # Low quality for speed
+                "--format=mp4",  # Full video to test all frames
             ]
 
             logger.info(f"Test rendering: {' '.join(cmd)}")
@@ -524,7 +893,7 @@ Fix the error using safe Manim patterns. Keep visuals similar but use reliable m
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=30,  # 30 second timeout for test
+                timeout=120,  # 2 minute timeout for full animation test (was 30s for single frame)
             )
 
             if result.returncode != 0:

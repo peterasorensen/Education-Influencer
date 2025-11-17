@@ -1,0 +1,441 @@
+{
+  "metadata": {
+    "title": "Understanding the Pythagorean Theorem",
+    "topic": "Pythagorean Theorem",
+    "category": "mathematics",
+    "difficulty": "beginner",
+    "duration": 45.0,
+    "target_audience": "middle school and high school students",
+    "learning_objectives": [
+      "Understand the relationship between sides of a right triangle",
+      "Apply the Pythagorean theorem to solve problems",
+      "Visualize the geometric proof of a² + b² = c²"
+    ],
+    "prerequisites": [
+      "Basic geometry",
+      "Understanding of squares and square roots"
+    ]
+  },
+  "global_settings": {
+    "background_color": "#0F1419",
+    "theme": "dark",
+    "font_family": "Arial",
+    "voice_settings": {
+      "voice_id": "educational_clear",
+      "speed": 1.0,
+      "pitch": 1.0
+    },
+    "camera": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 60
+    }
+  },
+  "segments": [
+    {
+      "id": "seg_intro",
+      "start_time": 0.0,
+      "end_time": 5.0,
+      "narration": {
+        "text": "Today, we're exploring one of the most famous theorems in mathematics: the Pythagorean theorem.",
+        "emphasis_words": ["famous", "Pythagorean theorem"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "title_text",
+          "type": "text",
+          "content": "The Pythagorean Theorem",
+          "action": "fade_in",
+          "position": "center",
+          "size": "large",
+          "timing": 0.5,
+          "duration": 1.5,
+          "style": {
+            "color": "#58A6FF",
+            "font_size": 72,
+            "font_weight": "bold"
+          },
+          "persist": false
+        }
+      ]
+    },
+    {
+      "id": "seg_triangle_intro",
+      "start_time": 5.0,
+      "end_time": 12.0,
+      "narration": {
+        "text": "It tells us about the relationship between the sides of a right triangle. Let's draw one.",
+        "emphasis_words": ["right triangle", "relationship"],
+        "pause_after": 0.3
+      },
+      "visual_states": [
+        {
+          "object_id": "triangle_main",
+          "type": "shape",
+          "content": {
+            "shape_type": "polygon",
+            "points": [
+              {"x": -3, "y": -2},
+              {"x": 3, "y": -2},
+              {"x": 3, "y": 2}
+            ]
+          },
+          "action": "create",
+          "position": "center",
+          "size": "large",
+          "timing": 1.0,
+          "duration": 2.0,
+          "style": {
+            "stroke_color": "#FFFFFF",
+            "stroke_width": 4,
+            "fill_color": "transparent",
+            "opacity": 1.0
+          },
+          "persist": true,
+          "layer": 1
+        },
+        {
+          "object_id": "right_angle_marker",
+          "type": "shape",
+          "content": {
+            "shape_type": "square",
+            "size": 0.4
+          },
+          "action": "fade_in",
+          "position": {
+            "x": 2.8,
+            "y": -1.8,
+            "z": 0
+          },
+          "timing": 3.0,
+          "duration": 0.5,
+          "style": {
+            "stroke_color": "#FFD700",
+            "stroke_width": 3,
+            "fill_color": "transparent"
+          },
+          "persist": true,
+          "layer": 2
+        }
+      ]
+    },
+    {
+      "id": "seg_label_sides",
+      "start_time": 12.0,
+      "end_time": 20.0,
+      "narration": {
+        "text": "We label the two shorter sides as 'a' and 'b', and the longest side, called the hypotenuse, as 'c'.",
+        "emphasis_words": ["hypotenuse", "longest"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "label_a",
+          "type": "text",
+          "content": "a",
+          "action": "write",
+          "position": {
+            "x": 0,
+            "y": -2.8,
+            "z": 0
+          },
+          "timing": 1.0,
+          "duration": 1.0,
+          "style": {
+            "color": "#FF6B6B",
+            "font_size": 48,
+            "font_weight": "bold"
+          },
+          "persist": true
+        },
+        {
+          "object_id": "label_b",
+          "type": "text",
+          "content": "b",
+          "action": "write",
+          "position": {
+            "x": 3.8,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 2.5,
+          "duration": 1.0,
+          "style": {
+            "color": "#4ECDC4",
+            "font_size": 48,
+            "font_weight": "bold"
+          },
+          "persist": true
+        },
+        {
+          "object_id": "label_c",
+          "type": "text",
+          "content": "c",
+          "action": "write",
+          "position": {
+            "x": -0.5,
+            "y": 0.5,
+            "z": 0
+          },
+          "timing": 4.5,
+          "duration": 1.0,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 48,
+            "font_weight": "bold"
+          },
+          "persist": true
+        },
+        {
+          "object_id": "hypotenuse_highlight",
+          "type": "annotation",
+          "content": "hypotenuse",
+          "action": "indicate",
+          "position": {
+            "x": -0.5,
+            "y": 1.2,
+            "z": 0
+          },
+          "timing": 5.5,
+          "duration": 1.5,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 32
+          },
+          "action_params": {
+            "color": "#95E1D3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "seg_formula_reveal",
+      "start_time": 20.0,
+      "end_time": 28.0,
+      "narration": {
+        "text": "The Pythagorean theorem states that a squared plus b squared equals c squared.",
+        "emphasis_words": ["squared", "equals"],
+        "pause_after": 1.0
+      },
+      "visual_states": [
+        {
+          "object_id": "formula_full",
+          "type": "equation",
+          "content": "a^2 + b^2 = c^2",
+          "action": "write",
+          "position": "bottom",
+          "size": "large",
+          "timing": 1.5,
+          "duration": 3.0,
+          "style": {
+            "color": "#FFFFFF",
+            "font_size": 64
+          },
+          "persist": true,
+          "layer": 3,
+          "transition": {
+            "type": "smooth",
+            "lag_ratio": 0.1
+          }
+        },
+        {
+          "object_id": "formula_box",
+          "type": "shape",
+          "content": {
+            "shape_type": "rectangle",
+            "width": 8,
+            "height": 1.5
+          },
+          "action": "create",
+          "position": "bottom",
+          "timing": 0.5,
+          "duration": 1.0,
+          "style": {
+            "stroke_color": "#58A6FF",
+            "stroke_width": 3,
+            "fill_color": "transparent",
+            "opacity": 0.8,
+            "border_radius": 10
+          },
+          "persist": true,
+          "layer": 2
+        }
+      ]
+    },
+    {
+      "id": "seg_visual_squares",
+      "start_time": 28.0,
+      "end_time": 38.0,
+      "narration": {
+        "text": "Let's visualize this. We can draw squares on each side of the triangle. The area of the two smaller squares combined equals the area of the largest square.",
+        "emphasis_words": ["squares", "area", "equals"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "square_a",
+          "type": "shape",
+          "content": {
+            "shape_type": "square",
+            "side_length": 6
+          },
+          "action": "fade_in",
+          "position": {
+            "relative_to": "triangle_main",
+            "offset": {"x": 0, "y": -5},
+            "anchor": "bottom"
+          },
+          "timing": 2.0,
+          "duration": 1.5,
+          "style": {
+            "stroke_color": "#FF6B6B",
+            "stroke_width": 3,
+            "fill_color": "#FF6B6B",
+            "opacity": 0.3
+          },
+          "persist": true
+        },
+        {
+          "object_id": "square_b",
+          "type": "shape",
+          "content": {
+            "shape_type": "square",
+            "side_length": 4
+          },
+          "action": "fade_in",
+          "position": {
+            "relative_to": "triangle_main",
+            "offset": {"x": 5, "y": 0},
+            "anchor": "left"
+          },
+          "timing": 3.5,
+          "duration": 1.5,
+          "style": {
+            "stroke_color": "#4ECDC4",
+            "stroke_width": 3,
+            "fill_color": "#4ECDC4",
+            "opacity": 0.3
+          },
+          "persist": true
+        },
+        {
+          "object_id": "square_c",
+          "type": "shape",
+          "content": {
+            "shape_type": "square",
+            "side_length": 7.21
+          },
+          "action": "fade_in",
+          "position": {
+            "x": -4,
+            "y": 2,
+            "z": 0
+          },
+          "timing": 5.0,
+          "duration": 1.5,
+          "style": {
+            "stroke_color": "#95E1D3",
+            "stroke_width": 3,
+            "fill_color": "#95E1D3",
+            "opacity": 0.3
+          },
+          "persist": true
+        },
+        {
+          "object_id": "area_label_a",
+          "type": "text",
+          "content": "Area = a²",
+          "action": "fade_in",
+          "position": {
+            "x": 0,
+            "y": -5,
+            "z": 0
+          },
+          "timing": 2.5,
+          "duration": 1.0,
+          "style": {
+            "color": "#FF6B6B",
+            "font_size": 32
+          }
+        },
+        {
+          "object_id": "area_label_b",
+          "type": "text",
+          "content": "Area = b²",
+          "action": "fade_in",
+          "position": {
+            "x": 5,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 4.0,
+          "duration": 1.0,
+          "style": {
+            "color": "#4ECDC4",
+            "font_size": 32
+          }
+        },
+        {
+          "object_id": "area_label_c",
+          "type": "text",
+          "content": "Area = c²",
+          "action": "fade_in",
+          "position": {
+            "x": -4,
+            "y": 2,
+            "z": 0
+          },
+          "timing": 5.5,
+          "duration": 1.0,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 32
+          }
+        }
+      ],
+      "camera_movement": {
+        "type": "zoom",
+        "zoom_level": 0.7,
+        "duration": 2.0
+      }
+    },
+    {
+      "id": "seg_conclusion",
+      "start_time": 38.0,
+      "end_time": 45.0,
+      "narration": {
+        "text": "And that's the Pythagorean theorem! A fundamental relationship that holds true for every right triangle.",
+        "emphasis_words": ["fundamental", "every right triangle"],
+        "pause_after": 1.0
+      },
+      "visual_states": [
+        {
+          "object_id": "formula_highlight",
+          "type": "equation",
+          "content": "a^2 + b^2 = c^2",
+          "action": "highlight",
+          "position": "center",
+          "size": "huge",
+          "timing": 2.0,
+          "duration": 2.0,
+          "style": {
+            "color": "#FFD700",
+            "font_size": 80
+          },
+          "action_params": {
+            "color": "#FFD700"
+          },
+          "transition": {
+            "type": "wiggle"
+          }
+        }
+      ],
+      "camera_movement": {
+        "type": "zoom",
+        "zoom_level": 1.0,
+        "duration": 1.5
+      }
+    }
+  ]
+}

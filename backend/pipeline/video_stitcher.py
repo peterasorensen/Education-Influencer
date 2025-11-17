@@ -366,15 +366,15 @@ class VideoStitcher:
 
             # Default subtitle style
             # For 9:16 video (1080x1920), position at y=960 (middle, dividing line)
-            # MarginV controls vertical position from bottom (1920 - 960 = 960)
-            # FontSize=28 for smaller, readable text
-            # BorderStyle=4 for semi-transparent background box
+            # Alignment=8 for top-center alignment (positions from top)
+            # MarginV=960 sets position 960px from top (at the dividing line)
+            # FontSize=22 for smaller, readable text (reduced from 28)
+            # BorderStyle=3 for opaque background box (BorderStyle=4 is invalid)
             # BackColour=&H80000000 (semi-transparent black background)
-            # Alignment=2 for center horizontal alignment
-            # Outline=1 for subtle text outline
+            # Outline=0 (no outline needed with background box)
             # Shadow=0 for no shadow (cleaner look)
             if not subtitle_style:
-                subtitle_style = "FontSize=28,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=4,BackColour=&H80000000,Alignment=2,MarginV=960,Outline=1,Shadow=0"
+                subtitle_style = "FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,BackColour=&H80000000,Alignment=8,MarginV=960,Outline=0,Shadow=0"
 
             # Build ffmpeg command
             # Note: On some systems, the subtitles filter path needs escaping
@@ -389,7 +389,7 @@ class VideoStitcher:
                 str(output_path),
             ]
 
-            logger.info(f"Running ffmpeg with subtitles (single-line, positioned at y=960)")
+            logger.info(f"Running ffmpeg with subtitles (single-line, top-aligned at y=960 from top)")
 
             result = await asyncio.to_thread(
                 subprocess.run,
@@ -424,7 +424,12 @@ class VideoStitcher:
 
     async def _process_srt_for_single_line(self, srt_path: Path) -> Path:
         """
-        Process SRT file to ensure single-line display by removing line breaks within segments.
+        Process SRT file to ensure single-line display with max 5-6 words per subtitle.
+
+        This method:
+        1. Removes line breaks within segments (ensures single line)
+        2. Splits long subtitles into chunks of max 6 words
+        3. Distributes timing proportionally across chunks
 
         Args:
             srt_path: Path to original SRT file
@@ -438,6 +443,7 @@ class VideoStitcher:
             # Split into subtitle blocks
             blocks = content.strip().split("\n\n")
             processed_blocks = []
+            subtitle_index = 1
 
             for block in blocks:
                 lines = block.split("\n")
@@ -445,17 +451,57 @@ class VideoStitcher:
                     processed_blocks.append(block)
                     continue
 
-                # First line is the index, second is timestamp
-                index_line = lines[0]
+                # Parse timestamp line (format: "00:00:01,000 --> 00:00:05,000")
                 timestamp_line = lines[1]
 
                 # Remaining lines are the subtitle text - join them into single line
                 text_lines = lines[2:]
                 single_line_text = " ".join(line.strip() for line in text_lines if line.strip())
 
-                # Reconstruct the block with single-line text
-                processed_block = f"{index_line}\n{timestamp_line}\n{single_line_text}"
-                processed_blocks.append(processed_block)
+                # Split text into chunks of max 6 words
+                words = single_line_text.split()
+                max_words_per_chunk = 6
+
+                if len(words) <= max_words_per_chunk:
+                    # Text is short enough, keep as single subtitle
+                    processed_block = f"{subtitle_index}\n{timestamp_line}\n{single_line_text}"
+                    processed_blocks.append(processed_block)
+                    subtitle_index += 1
+                else:
+                    # Split into chunks and distribute timing
+                    chunks = []
+                    for i in range(0, len(words), max_words_per_chunk):
+                        chunk = " ".join(words[i:i + max_words_per_chunk])
+                        chunks.append(chunk)
+
+                    # Parse start and end times
+                    time_parts = timestamp_line.split(" --> ")
+                    if len(time_parts) == 2:
+                        start_time_str = time_parts[0].strip()
+                        end_time_str = time_parts[1].strip()
+
+                        start_ms = self._parse_srt_time(start_time_str)
+                        end_ms = self._parse_srt_time(end_time_str)
+                        total_duration = end_ms - start_ms
+
+                        # Distribute time proportionally across chunks
+                        chunk_duration = total_duration / len(chunks)
+
+                        for i, chunk_text in enumerate(chunks):
+                            chunk_start_ms = start_ms + (i * chunk_duration)
+                            chunk_end_ms = start_ms + ((i + 1) * chunk_duration)
+
+                            chunk_start_str = self._format_srt_time(chunk_start_ms)
+                            chunk_end_str = self._format_srt_time(chunk_end_ms)
+
+                            chunk_block = f"{subtitle_index}\n{chunk_start_str} --> {chunk_end_str}\n{chunk_text}"
+                            processed_blocks.append(chunk_block)
+                            subtitle_index += 1
+                    else:
+                        # Invalid timestamp format, keep original
+                        processed_block = f"{subtitle_index}\n{timestamp_line}\n{single_line_text}"
+                        processed_blocks.append(processed_block)
+                        subtitle_index += 1
 
             # Create processed SRT file
             processed_content = "\n\n".join(processed_blocks)
@@ -465,12 +511,51 @@ class VideoStitcher:
                 processed_srt_path.write_text, processed_content, encoding="utf-8"
             )
 
-            logger.info(f"Processed SRT for single-line display: {processed_srt_path}")
+            logger.info(f"Processed SRT for single-line display with word chunking (max 6 words): {processed_srt_path}")
             return processed_srt_path
 
         except Exception as e:
             logger.warning(f"Failed to process SRT file, using original: {e}")
             return srt_path
+
+    def _parse_srt_time(self, time_str: str) -> float:
+        """
+        Parse SRT timestamp to milliseconds.
+
+        Args:
+            time_str: SRT timestamp (e.g., "00:00:01,500")
+
+        Returns:
+            Time in milliseconds
+        """
+        # Format: HH:MM:SS,mmm
+        time_parts = time_str.replace(",", ":").split(":")
+        hours = int(time_parts[0])
+        minutes = int(time_parts[1])
+        seconds = int(time_parts[2])
+        milliseconds = int(time_parts[3])
+
+        total_ms = (hours * 3600000) + (minutes * 60000) + (seconds * 1000) + milliseconds
+        return total_ms
+
+    def _format_srt_time(self, ms: float) -> str:
+        """
+        Format milliseconds to SRT timestamp.
+
+        Args:
+            ms: Time in milliseconds
+
+        Returns:
+            SRT timestamp string (e.g., "00:00:01,500")
+        """
+        total_seconds = int(ms / 1000)
+        milliseconds = int(ms % 1000)
+
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
     async def composite_top_bottom_videos(
         self,
@@ -516,18 +601,24 @@ class VideoStitcher:
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Get audio duration to ensure all videos match
+            # Get durations for all inputs
             audio_duration = await self._get_duration(audio_path)
+            top_duration = await self._get_duration(top_video_path)
+            bottom_duration = await self._get_duration(bottom_video_path)
 
-            # Build ffmpeg command for vertical stacking
-            # This will:
-            # 1. Scale both videos to 1080x960 (9:8 aspect ratio each)
-            # 2. Stack them vertically to create 1080x1920 (9:16 final output)
-            # 3. Add audio track
-            # 4. Ensure duration matches audio
+            logger.info(f"Input durations - Top: {top_duration:.4f}s, Bottom: {bottom_duration:.4f}s, Audio: {audio_duration:.4f}s")
+
+            # CRITICAL FIX: Trim both input videos to EXACT audio duration BEFORE compositing
+            # This prevents the vstack filter from processing extra frames beyond the audio duration
+            # Using filter_complex to trim ensures frame-accurate cutting at the filter level
             #
-            # Note: Top video (manim) should already be rendered at 9:8 (e.g., 1080x960)
-            # Bottom video (celebrity) will be scaled/cropped from 9:16 to 9:8
+            # The bug was: When using -t on the output with filter_complex, ffmpeg processes ALL frames
+            # through the filter first (using the longest input), THEN trims the output. This causes:
+            # 1. Extra frames to be processed (slower)
+            # 2. Inconsistent duration matching (97s instead of 91s)
+            # 3. Audio/video sync drift
+            #
+            # Solution: Use trim filter on EACH INPUT before vstack to ensure exact duration matching
             cmd = [
                 "ffmpeg",
                 "-i", str(top_video_path),
@@ -535,13 +626,15 @@ class VideoStitcher:
                 "-i", str(audio_path),
                 "-filter_complex",
                 (
-                    # Scale top video to exactly 1080x960 (should already be this size if rendered correctly)
-                    # Use 'increase' to fill the frame, then crop to exact size
-                    "[0:v]scale=1080:960:force_original_aspect_ratio=increase,"
+                    # TRIM top video to exact audio duration FIRST (before scaling)
+                    f"[0:v]trim=duration={audio_duration},setpts=PTS-STARTPTS,"
+                    # Then scale to 1080x960 (9:8 aspect ratio for top half)
+                    "scale=1080:960:force_original_aspect_ratio=increase,"
                     "crop=1080:960[top];"
-                    # Scale and crop bottom video to 1080x960 (9:8 bottom half)
-                    # This crops the 9:16 celebrity video to show just the top portion
-                    "[1:v]scale=1080:960:force_original_aspect_ratio=increase,"
+                    # TRIM bottom video to exact audio duration FIRST (before scaling)
+                    f"[1:v]trim=duration={audio_duration},setpts=PTS-STARTPTS,"
+                    # Then scale and crop to 1080x960 (9:8 bottom half from 9:16 source)
+                    "scale=1080:960:force_original_aspect_ratio=increase,"
                     "crop=1080:960[bottom];"
                     # Stack vertically to create final 1080x1920 (9:16)
                     "[top][bottom]vstack=inputs=2[v]"
@@ -553,13 +646,13 @@ class VideoStitcher:
                 "-crf", "23",
                 "-c:a", "aac",
                 "-b:a", "192k",
-                "-t", str(audio_duration),  # Match audio duration
-                "-shortest",
+                # Remove -t and -shortest since trimming is now done in the filter
+                # This ensures the output matches the trimmed filter output exactly
                 "-y",
                 str(output_path),
             ]
 
-            logger.info(f"Running ffmpeg composite")
+            logger.info(f"Running ffmpeg composite with input trimming to {audio_duration:.4f}s")
 
             result = await asyncio.to_thread(
                 subprocess.run,
@@ -576,6 +669,14 @@ class VideoStitcher:
 
             if not output_path.exists():
                 raise Exception(f"Output file not created: {output_path}")
+
+            # Verify output duration matches audio
+            output_duration = await self._get_duration(output_path)
+            duration_diff = abs(output_duration - audio_duration)
+            logger.info(f"Composite output duration: {output_duration:.4f}s (target: {audio_duration:.4f}s, diff: {duration_diff:.4f}s)")
+
+            if duration_diff > 0.1:
+                logger.warning(f"Composite duration differs from audio by {duration_diff:.4f}s (may cause sync issues)")
 
             logger.info(f"Video compositing complete: {output_path}")
 
@@ -596,11 +697,14 @@ class VideoStitcher:
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> Path:
         """
-        Trim a video to exact duration.
+        Trim a video to EXACT duration with ZERO tolerance.
+
+        Uses frame-accurate trimming with re-encoding and audio re-encoding
+        to ensure the output duration matches the target EXACTLY.
 
         Args:
             video_path: Path to input video
-            duration: Target duration in seconds
+            duration: Target duration in seconds (will be matched exactly)
             output_path: Path for trimmed output video
             progress_callback: Optional callback for progress updates
 
@@ -612,9 +716,9 @@ class VideoStitcher:
         """
         try:
             if progress_callback:
-                progress_callback(f"Trimming video to {duration}s...", 0)
+                progress_callback(f"Trimming video to {duration:.4f}s...", 0)
 
-            logger.info(f"Trimming {video_path} to {duration}s")
+            logger.info(f"Trimming {video_path} to EXACT duration: {duration:.4f}s")
 
             # Verify input file exists
             if not video_path.exists():
@@ -622,24 +726,37 @@ class VideoStitcher:
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Build ffmpeg command to trim video with re-encoding for accuracy
-            # Note: We re-encode because '-c copy' can result in imprecise cuts at non-keyframes
-            # Re-encoding ensures we get EXACTLY the duration we want
+            # Get input video duration for logging
+            input_duration = await self._get_duration(video_path)
+            logger.info(f"Input video duration: {input_duration:.4f}s, target: {duration:.4f}s, diff: {abs(input_duration - duration):.4f}s")
+
+            # Build ffmpeg command for FRAME-PERFECT trimming
+            # Strategy:
+            # 1. Use -t for duration limit (not -to, as -t is more accurate)
+            # 2. Re-encode video and audio for frame-accurate cutting
+            # 3. Use -vsync cfr for constant frame rate
+            # 4. Use -af asetpts=PTS-STARTPTS to reset audio timestamps
+            # 5. Use -fflags +genpts to regenerate timestamps for perfect sync
+            # 6. Use high precision for duration (ffmpeg handles microseconds)
             cmd = [
                 "ffmpeg",
+                "-fflags", "+genpts",  # Generate presentation timestamps for accuracy
                 "-i", str(video_path),
-                "-t", str(duration),  # Trim to exact duration
-                "-c:v", "libx264",  # Re-encode for precise trimming
+                "-t", f"{duration:.6f}",  # Trim to EXACT duration with microsecond precision
+                "-c:v", "libx264",  # Re-encode video for frame-accurate cutting
                 "-preset", "medium",
                 "-crf", "23",
-                "-c:a", "aac",  # Re-encode audio
+                "-c:a", "aac",  # Re-encode audio for sample-accurate cutting
                 "-b:a", "192k",
-                "-vsync", "cfr",  # Constant frame rate
+                "-ar", "48000",  # Standard audio sample rate
+                "-vsync", "cfr",  # Constant frame rate (no frame drops or duplicates)
+                "-af", "asetpts=PTS-STARTPTS",  # Reset audio timestamps to start at 0
+                "-avoid_negative_ts", "make_zero",  # Ensure timestamps start at zero
                 "-y",
                 str(output_path),
             ]
 
-            logger.info(f"Running ffmpeg trim with re-encoding for precision: {duration:.2f}s")
+            logger.info(f"Running ffmpeg frame-perfect trim with microsecond precision: {duration:.6f}s")
 
             result = await asyncio.to_thread(
                 subprocess.run,
@@ -657,7 +774,13 @@ class VideoStitcher:
             if not output_path.exists():
                 raise Exception(f"Output file not created: {output_path}")
 
-            logger.info(f"Video trimmed successfully: {output_path}")
+            # Verify output duration
+            output_duration = await self._get_duration(output_path)
+            duration_diff = abs(output_duration - duration)
+            logger.info(f"Video trimmed: output={output_duration:.4f}s, target={duration:.4f}s, diff={duration_diff:.4f}s")
+
+            if duration_diff > 0.001:  # Log warning if off by more than 1ms
+                logger.warning(f"Trimmed video differs from target by {duration_diff:.4f}s (this may accumulate over many segments)")
 
             if progress_callback:
                 progress_callback("Video trimming complete", 100)
@@ -714,24 +837,33 @@ class VideoStitcher:
 
             try:
                 # Run ffmpeg concat with re-encoding to prevent timing drift
-                # Note: We re-encode because '-c copy' can cause timing drift when segments
-                # have slightly different timestamps or frame rates from different sources
+                # ZERO TOLERANCE STRATEGY:
+                # 1. Use concat demuxer with re-encoding (not concat filter)
+                # 2. Re-encode both video and audio for frame/sample accurate concatenation
+                # 3. Use -vsync cfr to ensure constant frame rate across all segments
+                # 4. Use -fflags +genpts to regenerate timestamps for perfect continuity
+                # 5. Use -af aresample=async=1 to ensure audio samples align perfectly
+                # 6. Reset timestamps to ensure no gaps or overlaps between segments
                 cmd = [
                     "ffmpeg",
                     "-f", "concat",
                     "-safe", "0",
+                    "-fflags", "+genpts",  # Generate perfect timestamps for concatenated segments
                     "-i", str(concat_file),
-                    "-c:v", "libx264",  # Re-encode video to ensure consistent timing
+                    "-c:v", "libx264",  # Re-encode video for frame-accurate concatenation
                     "-preset", "medium",
                     "-crf", "23",
-                    "-c:a", "aac",  # Re-encode audio for consistency
+                    "-c:a", "aac",  # Re-encode audio for sample-accurate concatenation
                     "-b:a", "192k",
-                    "-vsync", "cfr",  # Constant frame rate to prevent drift
+                    "-ar", "48000",  # Ensure consistent audio sample rate
+                    "-vsync", "cfr",  # Constant frame rate (no frame drops/duplicates)
+                    "-af", "aresample=async=1:first_pts=0",  # Resample audio to prevent drift, reset timestamps
+                    "-avoid_negative_ts", "make_zero",  # Ensure timestamps start at zero
                     "-y",
                     str(output_path),
                 ]
 
-                logger.info(f"Running ffmpeg concatenation with re-encoding (prevents timing drift)")
+                logger.info(f"Running ffmpeg concatenation with ZERO TOLERANCE (frame-perfect re-encoding)")
 
                 result = await asyncio.to_thread(
                     subprocess.run,

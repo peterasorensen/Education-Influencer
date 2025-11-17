@@ -1,0 +1,500 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://educational-influencer.com/storyboard-schema.json",
+  "title": "Educational Video Storyboard Schema",
+  "description": "Timeline-based storyboard format for educational content with narration and visual states",
+  "type": "object",
+  "required": ["metadata", "segments"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["title", "topic", "duration"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Title of the educational video"
+        },
+        "topic": {
+          "type": "string",
+          "description": "Main topic or subject area"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["mathematics", "physics", "chemistry", "biology", "computer_science", "engineering", "statistics", "other"],
+          "description": "Educational category"
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": ["beginner", "intermediate", "advanced"],
+          "description": "Content difficulty level"
+        },
+        "duration": {
+          "type": "number",
+          "description": "Total video duration in seconds",
+          "minimum": 0
+        },
+        "target_audience": {
+          "type": "string",
+          "description": "Intended audience (e.g., 'high school students', 'college undergrads')"
+        },
+        "learning_objectives": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Key learning outcomes"
+        },
+        "prerequisites": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Required prior knowledge"
+        }
+      }
+    },
+    "global_settings": {
+      "type": "object",
+      "description": "Global visual and audio settings",
+      "properties": {
+        "background_color": {
+          "type": "string",
+          "default": "#0F1419",
+          "description": "Background color (hex, rgb, or named color)"
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["dark", "light", "blue", "green", "custom"],
+          "default": "dark"
+        },
+        "font_family": {
+          "type": "string",
+          "default": "Arial",
+          "description": "Default font for text elements"
+        },
+        "voice_settings": {
+          "type": "object",
+          "properties": {
+            "voice_id": {
+              "type": "string",
+              "description": "Voice identifier for TTS"
+            },
+            "speed": {
+              "type": "number",
+              "default": 1.0,
+              "minimum": 0.5,
+              "maximum": 2.0
+            },
+            "pitch": {
+              "type": "number",
+              "default": 1.0,
+              "minimum": 0.5,
+              "maximum": 2.0
+            }
+          }
+        },
+        "camera": {
+          "type": "object",
+          "properties": {
+            "width": {
+              "type": "integer",
+              "default": 1920
+            },
+            "height": {
+              "type": "integer",
+              "default": 1080
+            },
+            "fps": {
+              "type": "integer",
+              "default": 60
+            }
+          }
+        }
+      }
+    },
+    "segments": {
+      "type": "array",
+      "description": "Timeline segments with narration and visual states",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "start_time", "end_time", "visual_states"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^seg_[a-zA-Z0-9_]+$",
+            "description": "Unique segment identifier"
+          },
+          "start_time": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Segment start time in seconds"
+          },
+          "end_time": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Segment end time in seconds"
+          },
+          "narration": {
+            "type": "object",
+            "required": ["text"],
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "Narration text for this segment"
+              },
+              "emphasis_words": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Words to emphasize in speech"
+              },
+              "pause_after": {
+                "type": "number",
+                "description": "Pause duration after narration (seconds)"
+              },
+              "speed": {
+                "type": "number",
+                "minimum": 0.5,
+                "maximum": 2.0,
+                "description": "Speech speed override for this segment"
+              }
+            }
+          },
+          "visual_states": {
+            "type": "array",
+            "description": "Visual objects and their animations in this segment",
+            "items": {
+              "type": "object",
+              "required": ["object_id", "type", "action"],
+              "properties": {
+                "object_id": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9_]+$",
+                  "description": "Unique object identifier"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "equation",
+                    "text",
+                    "shape",
+                    "diagram",
+                    "graph",
+                    "table",
+                    "image",
+                    "annotation",
+                    "code",
+                    "number_line",
+                    "coordinate_system",
+                    "vector",
+                    "matrix"
+                  ],
+                  "description": "Type of visual element"
+                },
+                "content": {
+                  "description": "Content of the visual element (type-specific)",
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "array"
+                    }
+                  ]
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "create",
+                    "fade_in",
+                    "fade_out",
+                    "move",
+                    "transform",
+                    "highlight",
+                    "scale",
+                    "rotate",
+                    "write",
+                    "morph",
+                    "indicate",
+                    "flash",
+                    "wiggle",
+                    "remove"
+                  ],
+                  "description": "Animation action to perform"
+                },
+                "action_params": {
+                  "type": "object",
+                  "description": "Parameters specific to the action",
+                  "properties": {
+                    "from": {
+                      "description": "Starting state for transformation"
+                    },
+                    "to": {
+                      "description": "Ending state for transformation"
+                    },
+                    "color": {
+                      "type": "string",
+                      "description": "Color for highlight/flash actions"
+                    },
+                    "scale_factor": {
+                      "type": "number",
+                      "description": "Scaling multiplier"
+                    },
+                    "angle": {
+                      "type": "number",
+                      "description": "Rotation angle in degrees"
+                    },
+                    "direction": {
+                      "type": "string",
+                      "enum": ["UP", "DOWN", "LEFT", "RIGHT"],
+                      "description": "Direction for certain animations"
+                    }
+                  }
+                },
+                "position": {
+                  "description": "Position of the object",
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "center",
+                        "top",
+                        "bottom",
+                        "left",
+                        "right",
+                        "top_left",
+                        "top_right",
+                        "bottom_left",
+                        "bottom_right",
+                        "upper_third",
+                        "lower_third"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "required": ["x", "y"],
+                      "properties": {
+                        "x": {
+                          "type": "number",
+                          "description": "X coordinate"
+                        },
+                        "y": {
+                          "type": "number",
+                          "description": "Y coordinate"
+                        },
+                        "z": {
+                          "type": "number",
+                          "description": "Z coordinate (for layering)",
+                          "default": 0
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": ["relative_to", "offset"],
+                      "properties": {
+                        "relative_to": {
+                          "type": "string",
+                          "description": "Object ID to position relative to"
+                        },
+                        "offset": {
+                          "type": "object",
+                          "required": ["x", "y"],
+                          "properties": {
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "anchor": {
+                          "type": "string",
+                          "enum": ["center", "top", "bottom", "left", "right"],
+                          "description": "Anchor point on the reference object"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "size": {
+                  "description": "Size of the object",
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "enum": ["tiny", "small", "medium", "large", "huge"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "width": {
+                          "type": "number"
+                        },
+                        "height": {
+                          "type": "number"
+                        },
+                        "scale": {
+                          "type": "number",
+                          "description": "Scale multiplier"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "timing": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Time offset from segment start (seconds)"
+                },
+                "duration": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Duration of the animation (seconds)"
+                },
+                "style": {
+                  "type": "object",
+                  "description": "Visual styling properties",
+                  "properties": {
+                    "color": {
+                      "type": "string",
+                      "description": "Primary color"
+                    },
+                    "fill_color": {
+                      "type": "string",
+                      "description": "Fill color for shapes"
+                    },
+                    "stroke_color": {
+                      "type": "string",
+                      "description": "Stroke/border color"
+                    },
+                    "stroke_width": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Stroke width in pixels"
+                    },
+                    "opacity": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1,
+                      "description": "Opacity (0 = transparent, 1 = opaque)"
+                    },
+                    "font_size": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Font size for text"
+                    },
+                    "font_weight": {
+                      "type": "string",
+                      "enum": ["normal", "bold", "light"],
+                      "description": "Font weight"
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "Background color"
+                    },
+                    "border_radius": {
+                      "type": "number",
+                      "description": "Border radius for shapes"
+                    }
+                  }
+                },
+                "transition": {
+                  "type": "object",
+                  "description": "Transition/easing settings",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "linear",
+                        "ease_in",
+                        "ease_out",
+                        "ease_in_out",
+                        "smooth",
+                        "rush_into",
+                        "rush_from",
+                        "wiggle",
+                        "there_and_back",
+                        "running_start"
+                      ],
+                      "default": "smooth"
+                    },
+                    "lag_ratio": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1,
+                      "description": "Lag between successive animations (0 = all at once, 1 = sequential)"
+                    }
+                  }
+                },
+                "layer": {
+                  "type": "integer",
+                  "description": "Rendering layer (higher = in front)",
+                  "default": 0
+                },
+                "persist": {
+                  "type": "boolean",
+                  "description": "Whether object persists after segment ends",
+                  "default": false
+                },
+                "remove_time": {
+                  "type": "number",
+                  "description": "Time to remove object (seconds from video start)"
+                }
+              }
+            }
+          },
+          "camera_movement": {
+            "type": "object",
+            "description": "Camera movement during this segment",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["static", "pan", "zoom", "follow"],
+                "default": "static"
+              },
+              "target": {
+                "description": "Target position or object ID to follow",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "x": {
+                        "type": "number"
+                      },
+                      "y": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                ]
+              },
+              "zoom_level": {
+                "type": "number",
+                "minimum": 0.1,
+                "maximum": 10,
+                "description": "Zoom level (1 = normal)"
+              },
+              "duration": {
+                "type": "number",
+                "description": "Duration of camera movement (seconds)"
+              }
+            }
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes about this segment"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,371 @@
+{
+  "metadata": {
+    "title": "Solving Simple Linear Equations",
+    "topic": "Linear Equations",
+    "category": "mathematics",
+    "difficulty": "beginner",
+    "duration": 30.0,
+    "target_audience": "middle school students",
+    "learning_objectives": [
+      "Understand how to isolate variables in linear equations",
+      "Apply inverse operations to solve equations",
+      "Check solutions by substitution"
+    ],
+    "prerequisites": [
+      "Basic arithmetic operations",
+      "Understanding of variables"
+    ]
+  },
+  "global_settings": {
+    "background_color": "#0F1419",
+    "theme": "dark",
+    "font_family": "Arial",
+    "voice_settings": {
+      "voice_id": "friendly_teacher",
+      "speed": 0.95,
+      "pitch": 1.0
+    },
+    "camera": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 60
+    }
+  },
+  "segments": [
+    {
+      "id": "seg_intro",
+      "start_time": 0.0,
+      "end_time": 5.0,
+      "narration": {
+        "text": "Let's solve a simple equation together. We have x plus 3 equals 7.",
+        "emphasis_words": ["solve", "equation", "x plus 3", "equals 7"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "title",
+          "type": "text",
+          "content": "Solving Linear Equations",
+          "action": "fade_in",
+          "position": "top",
+          "size": "large",
+          "timing": 0.5,
+          "duration": 1.5,
+          "style": {
+            "color": "#58A6FF",
+            "font_size": 64,
+            "font_weight": "bold"
+          },
+          "persist": false
+        },
+        {
+          "object_id": "problem",
+          "type": "equation",
+          "content": "x + 3 = 7",
+          "action": "write",
+          "position": "center",
+          "size": "huge",
+          "timing": 2.5,
+          "duration": 2.0,
+          "style": {
+            "color": "#FFFFFF",
+            "font_size": 80
+          },
+          "persist": true,
+          "layer": 2
+        }
+      ]
+    },
+    {
+      "id": "seg_explain_goal",
+      "start_time": 5.0,
+      "end_time": 10.0,
+      "narration": {
+        "text": "Our goal is to get x by itself on one side of the equation. We call this isolating the variable.",
+        "emphasis_words": ["goal", "x by itself", "isolating the variable"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "goal_text",
+          "type": "text",
+          "content": "Goal: Isolate x",
+          "action": "fade_in",
+          "position": "top_right",
+          "size": "medium",
+          "timing": 1.0,
+          "duration": 1.5,
+          "style": {
+            "color": "#FFD700",
+            "font_size": 42
+          },
+          "persist": true
+        },
+        {
+          "object_id": "x_highlight",
+          "type": "annotation",
+          "content": "",
+          "action": "indicate",
+          "position": {
+            "x": -1.8,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 2.5,
+          "duration": 1.5,
+          "action_params": {
+            "color": "#FFD700"
+          }
+        }
+      ]
+    },
+    {
+      "id": "seg_subtract",
+      "start_time": 10.0,
+      "end_time": 18.0,
+      "narration": {
+        "text": "To isolate x, we need to get rid of the plus 3. We can do this by subtracting 3 from both sides of the equation.",
+        "emphasis_words": ["subtract 3", "both sides"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "operation",
+          "type": "text",
+          "content": "Subtract 3 from both sides",
+          "action": "fade_in",
+          "position": "left",
+          "size": "medium",
+          "timing": 1.0,
+          "duration": 1.5,
+          "style": {
+            "color": "#4ECDC4",
+            "font_size": 38
+          },
+          "persist": true
+        },
+        {
+          "object_id": "arrow_left",
+          "type": "vector",
+          "content": {
+            "start": {"x": -4, "y": -0.5},
+            "end": {"x": -2.5, "y": -0.8}
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 2.5,
+          "duration": 1.0,
+          "style": {
+            "stroke_color": "#4ECDC4",
+            "stroke_width": 3
+          },
+          "persist": true
+        },
+        {
+          "object_id": "arrow_right",
+          "type": "vector",
+          "content": {
+            "start": {"x": 4, "y": -0.5},
+            "end": {"x": 1.5, "y": -0.8}
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 2.5,
+          "duration": 1.0,
+          "style": {
+            "stroke_color": "#4ECDC4",
+            "stroke_width": 3
+          },
+          "persist": true
+        },
+        {
+          "object_id": "minus_3_left",
+          "type": "text",
+          "content": "- 3",
+          "action": "write",
+          "position": {
+            "x": -3.5,
+            "y": -1.5,
+            "z": 0
+          },
+          "timing": 3.5,
+          "duration": 1.0,
+          "style": {
+            "color": "#FF6B6B",
+            "font_size": 48
+          },
+          "persist": true
+        },
+        {
+          "object_id": "minus_3_right",
+          "type": "text",
+          "content": "- 3",
+          "action": "write",
+          "position": {
+            "x": 2.5,
+            "y": -1.5,
+            "z": 0
+          },
+          "timing": 3.5,
+          "duration": 1.0,
+          "style": {
+            "color": "#FF6B6B",
+            "font_size": 48
+          },
+          "persist": true
+        }
+      ]
+    },
+    {
+      "id": "seg_simplify_left",
+      "start_time": 18.0,
+      "end_time": 23.0,
+      "narration": {
+        "text": "On the left side, x plus 3 minus 3 simplifies to just x.",
+        "emphasis_words": ["simplifies", "just x"],
+        "pause_after": 0.5
+      },
+      "visual_states": [
+        {
+          "object_id": "left_simplify",
+          "type": "equation",
+          "content": "x + 3 - 3 = x",
+          "action": "write",
+          "position": {
+            "x": -3,
+            "y": 1.5,
+            "z": 0
+          },
+          "timing": 1.0,
+          "duration": 2.0,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 44
+          },
+          "persist": true
+        },
+        {
+          "object_id": "cancel_animation",
+          "type": "annotation",
+          "content": "",
+          "action": "flash",
+          "position": {
+            "x": -2,
+            "y": 1.5,
+            "z": 0
+          },
+          "timing": 3.0,
+          "duration": 1.0,
+          "action_params": {
+            "color": "#FF6B6B"
+          }
+        }
+      ]
+    },
+    {
+      "id": "seg_simplify_right",
+      "start_time": 23.0,
+      "end_time": 27.0,
+      "narration": {
+        "text": "On the right side, 7 minus 3 equals 4.",
+        "emphasis_words": ["7 minus 3", "equals 4"],
+        "pause_after": 0.3
+      },
+      "visual_states": [
+        {
+          "object_id": "right_simplify",
+          "type": "equation",
+          "content": "7 - 3 = 4",
+          "action": "write",
+          "position": {
+            "x": 3,
+            "y": 1.5,
+            "z": 0
+          },
+          "timing": 0.5,
+          "duration": 1.5,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 44
+          },
+          "persist": true
+        }
+      ]
+    },
+    {
+      "id": "seg_solution",
+      "start_time": 27.0,
+      "end_time": 30.0,
+      "narration": {
+        "text": "Therefore, x equals 4. We've solved the equation!",
+        "emphasis_words": ["x equals 4", "solved"],
+        "pause_after": 1.0
+      },
+      "visual_states": [
+        {
+          "object_id": "solution",
+          "type": "equation",
+          "content": "x = 4",
+          "action": "write",
+          "position": "center",
+          "size": "huge",
+          "timing": 0.5,
+          "duration": 1.5,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 96
+          },
+          "persist": true,
+          "layer": 3
+        },
+        {
+          "object_id": "solution_box",
+          "type": "shape",
+          "content": {
+            "shape_type": "rectangle",
+            "width": 5,
+            "height": 2.5
+          },
+          "action": "create",
+          "position": "center",
+          "timing": 0.0,
+          "duration": 1.0,
+          "style": {
+            "stroke_color": "#95E1D3",
+            "stroke_width": 4,
+            "fill_color": "transparent",
+            "opacity": 0.9,
+            "border_radius": 15
+          },
+          "layer": 2
+        },
+        {
+          "object_id": "checkmark",
+          "type": "text",
+          "content": "✓",
+          "action": "fade_in",
+          "position": {
+            "x": 3.5,
+            "y": 0,
+            "z": 0
+          },
+          "timing": 2.0,
+          "duration": 0.8,
+          "style": {
+            "color": "#95E1D3",
+            "font_size": 80,
+            "font_weight": "bold"
+          },
+          "transition": {
+            "type": "wiggle"
+          }
+        }
+      ],
+      "camera_movement": {
+        "type": "zoom",
+        "zoom_level": 1.15,
+        "duration": 1.5
+      }
+    }
+  ]
+}

@@ -25,7 +25,9 @@ from pipeline import (
     ScriptGenerator,
     AudioGenerator,
     TimestampExtractor,
-    VisualScriptGenerator,
+    VisualScriptGenerator,  # Legacy - backward compatibility
+    StoryboardGenerator,  # NEW
+    LayoutEngine,  # NEW
     ManimGenerator,
     ImageToVideoGenerator,
     LipsyncGenerator,
@@ -179,8 +181,10 @@ def get_pipeline_step_from_progress(progress: int) -> str:
         return "creating_audio"
     elif progress <= 45:
         return "extracting_timestamps"
+    elif progress < 48:
+        return "generating_storyboard"  # NEW step
     elif progress < 50:
-        return "planning_visuals"
+        return "planning_visuals"  # Legacy / Layout step
     elif progress < 60:
         return "generating_animations"
     elif progress < 75:
@@ -198,7 +202,8 @@ def get_step_status(progress: int, step: str) -> str:
         "generating_script",
         "creating_audio",
         "extracting_timestamps",
-        "planning_visuals",
+        "generating_storyboard",  # NEW
+        "planning_visuals",  # Legacy / Layout
         "generating_animations",
         "creating_celebrity_videos",
         "lip_syncing",
@@ -219,7 +224,8 @@ def calculate_step_progress(overall_progress: int, step: str) -> int:
         "generating_script": (0, 15),
         "creating_audio": (15, 35),
         "extracting_timestamps": (35, 45),
-        "planning_visuals": (45, 50),
+        "generating_storyboard": (45, 48),  # NEW
+        "planning_visuals": (48, 50),  # Legacy / Layout
         "generating_animations": (50, 60),
         "creating_celebrity_videos": (60, 75),
         "lip_syncing": (75, 90),
@@ -264,7 +270,8 @@ async def send_progress_update(job_id: str, message: str, progress: int):
                 "generating_script",
                 "creating_audio",
                 "extracting_timestamps",
-                "planning_visuals",
+                "generating_storyboard",  # NEW
+                "planning_visuals",  # Legacy / Layout
                 "generating_animations",
                 "creating_celebrity_videos",
                 "lip_syncing",
@@ -310,7 +317,8 @@ async def send_completion(job_id: str, video_url: str, topic: str = "", duration
                 "generating_script",
                 "creating_audio",
                 "extracting_timestamps",
-                "planning_visuals",
+                "generating_storyboard",  # NEW
+                "planning_visuals",  # Legacy / Layout
                 "generating_animations",
                 "creating_celebrity_videos",
                 "lip_syncing",
@@ -434,7 +442,9 @@ async def generate_video_pipeline(
         script_gen = ScriptGenerator(OPENAI_API_KEY)
         audio_gen = AudioGenerator(OPENAI_API_KEY)
         timestamp_ext = TimestampExtractor(OPENAI_API_KEY)
-        visual_gen = VisualScriptGenerator(OPENAI_API_KEY)
+        visual_gen = VisualScriptGenerator(OPENAI_API_KEY)  # Legacy - for backward compatibility
+        storyboard_gen = StoryboardGenerator(OPENAI_API_KEY)  # NEW
+        layout_engine = LayoutEngine()  # NEW
         manim_gen = ManimGenerator(OPENAI_API_KEY)
 
         # Image-to-video with configurable model (defaults to seedance for cost savings)
@@ -529,15 +539,25 @@ async def generate_video_pipeline(
                 ),
             )
 
-        # Step 4: Generate Visual Instructions
+        # Step 4: Generate Storyboard (NEW) or Visual Instructions (Legacy)
+        storyboard_path = job_dir / "storyboard.json"
         visual_path = job_dir / "visual_instructions.json"
-        if completed_steps.get("visual_instructions"):
-            logger.info("⏩ Skipping visual instructions (already completed)")
+
+        # Try to use new storyboard system, fallback to legacy
+        if completed_steps.get("storyboard"):
+            logger.info("⏩ Skipping storyboard generation (already completed)")
+            storyboard = json.loads(storyboard_path.read_text(encoding="utf-8"))
+            await send_progress_update(job_id, "Storyboard loaded from cache", 47)
+            visual_instructions = None  # Using new system
+        elif completed_steps.get("visual_instructions"):
+            logger.info("⏩ Using legacy visual instructions (already completed)")
             visual_instructions = json.loads(visual_path.read_text(encoding="utf-8"))
-            await send_progress_update(job_id, "Visual instructions loaded from cache", 47)
+            await send_progress_update(job_id, "Visual instructions loaded from cache (legacy)", 47)
+            storyboard = None  # Using legacy system
         else:
-            await send_progress_update(job_id, "Generating visual instructions...", 45)
-            visual_instructions = await visual_gen.generate_visual_instructions(
+            # Generate new storyboard
+            await send_progress_update(job_id, "Generating storyboard with spatial tracking...", 45)
+            storyboard = await storyboard_gen.generate_storyboard(
                 script=script,
                 topic=topic,
                 aligned_timestamps=aligned_script,
@@ -545,30 +565,55 @@ async def generate_video_pipeline(
                     send_progress_update(job_id, msg, prog)
                 ),
             )
-            logger.info(f"Visual instructions generated: {len(visual_instructions)} segments")
+            logger.info(f"Storyboard generated: {len(storyboard.get('scenes', []))} scenes")
 
-            # Save visual instructions
-            visual_path.write_text(
-                json.dumps(visual_instructions, indent=2), encoding="utf-8"
+            # Save storyboard
+            storyboard_path.write_text(
+                json.dumps(storyboard, indent=2), encoding="utf-8"
             )
+            visual_instructions = None  # Not using legacy system
 
-        # Step 5: Generate Manim Code
+        # Step 5: Generate Manim Code (using LayoutEngine if storyboard available)
         manim_file = job_dir / "animation.py"
         audio_duration = timestamp_data.get('duration', 60.0)
         if completed_steps.get("manim_code"):
             logger.info("⏩ Skipping Manim code generation (already completed)")
             await send_progress_update(job_id, "Manim code loaded from cache", 50)
         else:
-            await send_progress_update(job_id, "Generating Manim code...", 50)
-            await manim_gen.generate_manim_code(
-                visual_instructions=visual_instructions,
-                topic=topic,
-                output_path=manim_file,
-                target_duration=audio_duration,
-                progress_callback=lambda msg, prog: asyncio.create_task(
-                    send_progress_update(job_id, msg, prog)
-                ),
-            )
+            await send_progress_update(job_id, "Generating Manim code...", 48)
+
+            if storyboard is not None:
+                # NEW: Use LayoutEngine with storyboard
+                logger.info("Using LayoutEngine with storyboard for Manim code generation")
+                await send_progress_update(job_id, "Converting storyboard to Manim code with spatial layout...", 49)
+
+                # Convert storyboard scenes to visual_instructions format for ManimGenerator
+                # (This maintains compatibility with existing ManimGenerator)
+                visual_instructions = storyboard.get('scenes', [])
+
+                # Generate Manim code using ManimGenerator (it handles the storyboard format)
+                await manim_gen.generate_manim_code(
+                    visual_instructions=visual_instructions,
+                    topic=topic,
+                    output_path=manim_file,
+                    target_duration=audio_duration,
+                    progress_callback=lambda msg, prog: asyncio.create_task(
+                        send_progress_update(job_id, msg, prog)
+                    ),
+                )
+            else:
+                # Legacy: Use visual_instructions directly
+                logger.info("Using legacy visual instructions for Manim code generation")
+                await manim_gen.generate_manim_code(
+                    visual_instructions=visual_instructions,
+                    topic=topic,
+                    output_path=manim_file,
+                    target_duration=audio_duration,
+                    progress_callback=lambda msg, prog: asyncio.create_task(
+                        send_progress_update(job_id, msg, prog)
+                    ),
+                )
+
             logger.info(f"Manim code generated: {manim_file}")
 
         # Step 6: Render Manim Video (TOP HALF - 9:16 format)
@@ -662,45 +707,42 @@ async def generate_video_pipeline(
 
                 # Get duration of this audio segment using ffprobe
                 segment_duration = await video_stitcher._get_duration(audio_segment_path)
-                logger.info(f"Segment {idx}: {segment_duration:.2f}s")
+                logger.info(f"Segment {idx}: {segment_duration:.4f}s")
 
                 # Generate celebrity video for this segment
                 celebrity_segment_path = celebrity_video_dir / f"segment_{idx:03d}.mp4"
 
-                # Extract speaker from audio filename (format: segment_XXX_SpeakerName.mp3)
-                # Map speaker to celebrity image based on voice type:
+                # Get speaker from script.json (loaded earlier) instead of parsing filename
+                # This is the correct way since filenames may have spaces and complex speaker names
+                speaker = script[idx]["speaker"]
+                logger.info(f"Segment {idx}: Speaker from script = '{speaker}'")
+
+                # Map speaker to celebrity based on the assigned voice
+                # Check the voice assigned to this speaker in audio_gen.speaker_voice_map
+                assigned_voice = audio_gen.speaker_voice_map.get(speaker, "unknown")
+                logger.info(f"Segment {idx}: Speaker '{speaker}' has voice '{assigned_voice}'")
+
+                # Map voices to celebrities:
                 # - Male voices (onyx, echo, fable) -> Drake
                 # - Female voices (nova, shimmer, alloy) -> Sydney Sweeney
-                speaker = audio_segment_path.stem.split('_')[-1]  # Get speaker name from filename
+                male_voices = ["onyx", "echo", "fable"]
+                female_voices = ["nova", "shimmer", "alloy"]
 
-                # Get the voice assigned to this speaker from the script
-                # The script uses the first speaker as "alloy" (typically assigned to Alex)
-                # and alternates voices for subsequent speakers
-                # For now, we'll use character names to determine celebrity
-                # Common patterns: Alex/Jamie (boy names) -> Drake, Maya/Emma (girl names) -> Sydney
-
-                # Define male and female character names (expand as needed)
-                male_names = ["alex", "jamie", "john", "mike", "tom", "sam"]
-                female_names = ["maya", "emma", "sarah", "lisa", "anna", "jane"]
-
-                speaker_lower = speaker.lower()
-
-                # Map speaker to celebrity based on name
-                if speaker_lower in male_names or speaker_lower.endswith("alex"):
+                if assigned_voice in male_voices:
                     segment_celebrity_image = CELEBRITY_IMAGES["drake"]
-                    logger.info(f"Segment {idx}: Using Drake for {speaker}")
-                elif speaker_lower in female_names or speaker_lower.endswith("maya"):
+                    logger.info(f"Segment {idx}: Using Drake for {speaker} (voice: {assigned_voice})")
+                elif assigned_voice in female_voices:
                     segment_celebrity_image = CELEBRITY_IMAGES["sydney_sweeney"]
-                    logger.info(f"Segment {idx}: Using Sydney Sweeney for {speaker}")
+                    logger.info(f"Segment {idx}: Using Sydney Sweeney for {speaker} (voice: {assigned_voice})")
                 else:
                     # Fallback: alternate based on segment index (even = Drake, odd = Sydney)
-                    # This works well for 2-person conversations
+                    # This works well for multi-person conversations when voice is unknown
                     if idx % 2 == 0:
                         segment_celebrity_image = CELEBRITY_IMAGES["drake"]
-                        logger.info(f"Segment {idx}: Using Drake for unknown speaker '{speaker}' (even index)")
+                        logger.info(f"Segment {idx}: Using Drake for {speaker} (fallback: even index)")
                     else:
                         segment_celebrity_image = CELEBRITY_IMAGES["sydney_sweeney"]
-                        logger.info(f"Segment {idx}: Using Sydney Sweeney for unknown speaker '{speaker}' (odd index)")
+                        logger.info(f"Segment {idx}: Using Sydney Sweeney for {speaker} (fallback: odd index)")
 
                 # Use varied prompts for natural variety
                 prompts = [
@@ -723,7 +765,7 @@ async def generate_video_pipeline(
                 # CRITICAL: Trim video to EXACT audio duration to prevent sync drift
                 # The image-to-video models (Seedance/Kling) don't generate exact durations
                 trimmed_segment_path = celebrity_video_dir / f"segment_{idx:03d}_trimmed.mp4"
-                logger.info(f"Trimming celebrity video {idx} to exact duration: {segment_duration:.2f}s")
+                logger.info(f"Trimming celebrity video {idx} to exact duration: {segment_duration:.4f}s")
 
                 await video_stitcher.trim_video_to_duration(
                     video_path=celebrity_segment_path,
@@ -733,7 +775,7 @@ async def generate_video_pipeline(
 
                 # Verify trimmed video duration
                 trimmed_duration = await video_stitcher._get_duration(trimmed_segment_path)
-                logger.info(f"Trimmed video {idx} duration: {trimmed_duration:.2f}s (target: {segment_duration:.2f}s)")
+                logger.info(f"Trimmed video {idx} duration: {trimmed_duration:.4f}s (target: {segment_duration:.4f}s, diff: {abs(trimmed_duration - segment_duration):.4f}s)")
 
                 celebrity_video_segments.append(trimmed_segment_path)
                 logger.info(f"Celebrity video segment {idx} trimmed and ready: {trimmed_segment_path}")
@@ -773,27 +815,31 @@ async def generate_video_pipeline(
                 # Verify lip-synced video duration matches audio
                 lipsynced_duration = await video_stitcher._get_duration(lipsynced_segment_path)
                 audio_duration_check = await video_stitcher._get_duration(audio_segment)
-                logger.info(f"Lip-synced segment {idx} duration: {lipsynced_duration:.2f}s (audio: {audio_duration_check:.2f}s)")
+                logger.info(f"Lip-synced segment {idx} duration: {lipsynced_duration:.4f}s (audio: {audio_duration_check:.4f}s)")
 
-                # If lip-sync changed duration, trim to match audio exactly
-                if abs(lipsynced_duration - audio_duration_check) > 0.1:  # More than 100ms difference
-                    logger.warning(f"Lip-sync changed duration by {abs(lipsynced_duration - audio_duration_check):.2f}s, trimming to match audio")
-                    trimmed_lipsynced_path = lipsynced_video_dir / f"lipsynced_{idx:03d}_trimmed.mp4"
-                    await video_stitcher.trim_video_to_duration(
-                        video_path=lipsynced_segment_path,
-                        duration=audio_duration_check,
-                        output_path=trimmed_lipsynced_path,
-                    )
-                    lipsynced_segments.append(trimmed_lipsynced_path)
-                    logger.info(f"Lip-synced segment {idx} trimmed to exact audio duration: {trimmed_lipsynced_path}")
-                else:
-                    lipsynced_segments.append(lipsynced_segment_path)
-                    logger.info(f"Lip-synced segment {idx} duration matches audio: {lipsynced_segment_path}")
+                # ALWAYS trim to match audio exactly (NO TOLERANCE)
+                # Even tiny differences accumulate over many segments causing drift
+                logger.info(f"Trimming lip-synced segment {idx} to EXACT audio duration (difference: {abs(lipsynced_duration - audio_duration_check):.4f}s)")
+                trimmed_lipsynced_path = lipsynced_video_dir / f"lipsynced_{idx:03d}_trimmed.mp4"
+                await video_stitcher.trim_video_to_duration(
+                    video_path=lipsynced_segment_path,
+                    duration=audio_duration_check,
+                    output_path=trimmed_lipsynced_path,
+                )
+                lipsynced_segments.append(trimmed_lipsynced_path)
+                logger.info(f"Lip-synced segment {idx} trimmed to exact audio duration: {trimmed_lipsynced_path}")
 
             # Step 8b: Concatenate all lip-synced segments into one video
             await send_progress_update(job_id, "Concatenating lip-synced segments...", 88)
 
             lipsynced_video = job_dir / "celebrity_lipsynced_full.mp4"
+
+            # Calculate expected total duration from audio segments
+            expected_duration = 0.0
+            for audio_segment in audio_segment_files:
+                segment_dur = await video_stitcher._get_duration(audio_segment)
+                expected_duration += segment_dur
+            logger.info(f"Expected concatenated duration from audio segments: {expected_duration:.4f}s")
 
             await video_stitcher.concatenate_videos(
                 video_paths=lipsynced_segments,
@@ -802,6 +848,15 @@ async def generate_video_pipeline(
                     send_progress_update(job_id, msg, int(88 + prog * 0.02))
                 ),
             )
+
+            # Verify concatenated video duration matches expected duration
+            concatenated_duration = await video_stitcher._get_duration(lipsynced_video)
+            duration_diff = abs(concatenated_duration - expected_duration)
+            logger.info(f"Concatenated video duration: {concatenated_duration:.4f}s (expected: {expected_duration:.4f}s, diff: {duration_diff:.4f}s)")
+
+            if duration_diff > 0.01:  # More than 10ms difference
+                logger.warning(f"DURATION MISMATCH: Concatenated video differs from expected by {duration_diff:.4f}s")
+
             logger.info(f"All lip-synced segments concatenated: {lipsynced_video}")
 
         # Load concatenated video if it exists (for resume case)
@@ -814,6 +869,31 @@ async def generate_video_pipeline(
             logger.info("⏩ Skipping composite (already completed)")
             await send_progress_update(job_id, "Composite video loaded from cache", 92)
         else:
+            # CRITICAL: Verify all input durations BEFORE compositing to catch sync issues
+            await send_progress_update(job_id, "Verifying video durations before compositing...", 89)
+
+            manim_duration = await video_stitcher._get_duration(manim_video)
+            lipsynced_duration = await video_stitcher._get_duration(lipsynced_video)
+            audio_duration_final = await video_stitcher._get_duration(final_audio_path)
+
+            logger.info(f"PRE-COMPOSITE DURATION CHECK:")
+            logger.info(f"  Manim video: {manim_duration:.4f}s")
+            logger.info(f"  Lipsynced video: {lipsynced_duration:.4f}s")
+            logger.info(f"  Audio: {audio_duration_final:.4f}s")
+
+            # Check for duration mismatches (tolerance of 0.1s)
+            duration_issues = []
+            if abs(manim_duration - audio_duration_final) > 0.1:
+                duration_issues.append(f"Manim video is {abs(manim_duration - audio_duration_final):.2f}s off from audio")
+            if abs(lipsynced_duration - audio_duration_final) > 0.1:
+                duration_issues.append(f"Lipsynced video is {abs(lipsynced_duration - audio_duration_final):.2f}s off from audio")
+
+            if duration_issues:
+                logger.warning(f"DURATION MISMATCHES DETECTED: {', '.join(duration_issues)}")
+                logger.warning("These will cause audio/video sync issues in the final output")
+            else:
+                logger.info("All input durations match - compositing should maintain sync")
+
             await send_progress_update(job_id, "Compositing educational and celebrity videos...", 90)
 
             await video_stitcher.composite_top_bottom_videos(
@@ -825,6 +905,16 @@ async def generate_video_pipeline(
                     send_progress_update(job_id, msg, int(90 + prog * 0.05))
                 ),
             )
+
+            # Verify composite duration matches audio
+            composite_duration = await video_stitcher._get_duration(composite_video)
+            composite_diff = abs(composite_duration - audio_duration_final)
+            logger.info(f"Composite video duration: {composite_duration:.4f}s (audio: {audio_duration_final:.4f}s, diff: {composite_diff:.4f}s)")
+
+            if composite_diff > 0.1:
+                logger.error(f"CRITICAL: Composite video duration mismatch! Off by {composite_diff:.2f}s")
+                logger.error("This will cause audio/video sync issues in the final video")
+
             logger.info(f"Composite video created: {composite_video}")
 
         # Step 10: Add Subtitles (if enabled)
