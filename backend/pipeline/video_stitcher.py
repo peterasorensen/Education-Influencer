@@ -361,24 +361,35 @@ class VideoStitcher:
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
+            # Process SRT to ensure single-line display
+            processed_srt = await self._process_srt_for_single_line(srt_path)
+
             # Default subtitle style
+            # For 9:16 video (1080x1920), position at y=960 (middle, dividing line)
+            # MarginV controls vertical position from bottom (1920 - 960 = 960)
+            # FontSize=28 for smaller, readable text
+            # BorderStyle=4 for semi-transparent background box
+            # BackColour=&H80000000 (semi-transparent black background)
+            # Alignment=2 for center horizontal alignment
+            # Outline=1 for subtle text outline
+            # Shadow=0 for no shadow (cleaner look)
             if not subtitle_style:
-                subtitle_style = "FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3"
+                subtitle_style = "FontSize=28,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=4,BackColour=&H80000000,Alignment=2,MarginV=960,Outline=1,Shadow=0"
 
             # Build ffmpeg command
             # Note: On some systems, the subtitles filter path needs escaping
-            srt_path_escaped = str(srt_path).replace("\\", "/").replace(":", "\\:")
+            processed_srt_escaped = str(processed_srt).replace("\\", "/").replace(":", "\\:")
 
             cmd = [
                 "ffmpeg",
                 "-i", str(video_path),
-                "-vf", f"subtitles={srt_path_escaped}:force_style='{subtitle_style}'",
+                "-vf", f"subtitles={processed_srt_escaped}:force_style='{subtitle_style}'",
                 "-c:a", "copy",
                 "-y",
                 str(output_path),
             ]
 
-            logger.info(f"Running ffmpeg with subtitles")
+            logger.info(f"Running ffmpeg with subtitles (single-line, positioned at y=960)")
 
             result = await asyncio.to_thread(
                 subprocess.run,
@@ -393,6 +404,10 @@ class VideoStitcher:
                 logger.error(error_msg)
                 raise Exception(error_msg)
 
+            # Clean up processed SRT file
+            if processed_srt != srt_path:
+                processed_srt.unlink(missing_ok=True)
+
             if not output_path.exists():
                 raise Exception(f"Output file not created: {output_path}")
 
@@ -406,6 +421,56 @@ class VideoStitcher:
         except Exception as e:
             logger.error(f"Failed to add subtitles: {e}")
             raise Exception(f"Subtitle addition failed: {e}")
+
+    async def _process_srt_for_single_line(self, srt_path: Path) -> Path:
+        """
+        Process SRT file to ensure single-line display by removing line breaks within segments.
+
+        Args:
+            srt_path: Path to original SRT file
+
+        Returns:
+            Path to processed SRT file (same as input if no changes needed)
+        """
+        try:
+            content = await asyncio.to_thread(srt_path.read_text, encoding="utf-8")
+
+            # Split into subtitle blocks
+            blocks = content.strip().split("\n\n")
+            processed_blocks = []
+
+            for block in blocks:
+                lines = block.split("\n")
+                if len(lines) < 3:
+                    processed_blocks.append(block)
+                    continue
+
+                # First line is the index, second is timestamp
+                index_line = lines[0]
+                timestamp_line = lines[1]
+
+                # Remaining lines are the subtitle text - join them into single line
+                text_lines = lines[2:]
+                single_line_text = " ".join(line.strip() for line in text_lines if line.strip())
+
+                # Reconstruct the block with single-line text
+                processed_block = f"{index_line}\n{timestamp_line}\n{single_line_text}"
+                processed_blocks.append(processed_block)
+
+            # Create processed SRT file
+            processed_content = "\n\n".join(processed_blocks)
+            processed_srt_path = srt_path.parent / f"{srt_path.stem}_processed.srt"
+
+            await asyncio.to_thread(
+                processed_srt_path.write_text, processed_content, encoding="utf-8"
+            )
+
+            logger.info(f"Processed SRT for single-line display: {processed_srt_path}")
+            return processed_srt_path
+
+        except Exception as e:
+            logger.warning(f"Failed to process SRT file, using original: {e}")
+            return srt_path
 
     async def composite_top_bottom_videos(
         self,
@@ -456,11 +521,13 @@ class VideoStitcher:
 
             # Build ffmpeg command for vertical stacking
             # This will:
-            # 1. Scale both videos to same width (1080px for 9:16)
-            # 2. Crop/scale to half height each (960px each for total 1920px height)
-            # 3. Stack them vertically
-            # 4. Add audio track
-            # 5. Ensure duration matches audio
+            # 1. Scale both videos to 1080x960 (9:8 aspect ratio each)
+            # 2. Stack them vertically to create 1080x1920 (9:16 final output)
+            # 3. Add audio track
+            # 4. Ensure duration matches audio
+            #
+            # Note: Top video (manim) should already be rendered at 9:8 (e.g., 1080x960)
+            # Bottom video (celebrity) will be scaled/cropped from 9:16 to 9:8
             cmd = [
                 "ffmpeg",
                 "-i", str(top_video_path),
@@ -468,13 +535,15 @@ class VideoStitcher:
                 "-i", str(audio_path),
                 "-filter_complex",
                 (
-                    # Scale and crop top video to 1080x960 (top half)
-                    "[0:v]scale=1080:960:force_original_aspect_ratio=decrease,"
-                    "pad=1080:960:(ow-iw)/2:(oh-ih)/2[top];"
-                    # Scale and crop bottom video to 1080x960 (bottom half)
-                    "[1:v]scale=1080:960:force_original_aspect_ratio=decrease,"
-                    "pad=1080:960:(ow-iw)/2:(oh-ih)/2[bottom];"
-                    # Stack vertically
+                    # Scale top video to exactly 1080x960 (should already be this size if rendered correctly)
+                    # Use 'increase' to fill the frame, then crop to exact size
+                    "[0:v]scale=1080:960:force_original_aspect_ratio=increase,"
+                    "crop=1080:960[top];"
+                    # Scale and crop bottom video to 1080x960 (9:8 bottom half)
+                    # This crops the 9:16 celebrity video to show just the top portion
+                    "[1:v]scale=1080:960:force_original_aspect_ratio=increase,"
+                    "crop=1080:960[bottom];"
+                    # Stack vertically to create final 1080x1920 (9:16)
                     "[top][bottom]vstack=inputs=2[v]"
                 ),
                 "-map", "[v]",
@@ -553,17 +622,24 @@ class VideoStitcher:
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Build ffmpeg command to trim video
+            # Build ffmpeg command to trim video with re-encoding for accuracy
+            # Note: We re-encode because '-c copy' can result in imprecise cuts at non-keyframes
+            # Re-encoding ensures we get EXACTLY the duration we want
             cmd = [
                 "ffmpeg",
                 "-i", str(video_path),
                 "-t", str(duration),  # Trim to exact duration
-                "-c", "copy",  # Copy without re-encoding (faster)
+                "-c:v", "libx264",  # Re-encode for precise trimming
+                "-preset", "medium",
+                "-crf", "23",
+                "-c:a", "aac",  # Re-encode audio
+                "-b:a", "192k",
+                "-vsync", "cfr",  # Constant frame rate
                 "-y",
                 str(output_path),
             ]
 
-            logger.info(f"Running ffmpeg trim: {' '.join(cmd)}")
+            logger.info(f"Running ffmpeg trim with re-encoding for precision: {duration:.2f}s")
 
             result = await asyncio.to_thread(
                 subprocess.run,
@@ -637,18 +713,25 @@ class VideoStitcher:
                     f.write(f"file '{video_path.absolute()}'\n")
 
             try:
-                # Run ffmpeg concat
+                # Run ffmpeg concat with re-encoding to prevent timing drift
+                # Note: We re-encode because '-c copy' can cause timing drift when segments
+                # have slightly different timestamps or frame rates from different sources
                 cmd = [
                     "ffmpeg",
                     "-f", "concat",
                     "-safe", "0",
                     "-i", str(concat_file),
-                    "-c", "copy",  # Copy streams without re-encoding (faster)
+                    "-c:v", "libx264",  # Re-encode video to ensure consistent timing
+                    "-preset", "medium",
+                    "-crf", "23",
+                    "-c:a", "aac",  # Re-encode audio for consistency
+                    "-b:a", "192k",
+                    "-vsync", "cfr",  # Constant frame rate to prevent drift
                     "-y",
                     str(output_path),
                 ]
 
-                logger.info(f"Running ffmpeg concatenation")
+                logger.info(f"Running ffmpeg concatenation with re-encoding (prevents timing drift)")
 
                 result = await asyncio.to_thread(
                     subprocess.run,

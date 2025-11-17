@@ -374,7 +374,10 @@ async def generate_video_pipeline(
         duration_seconds: Target duration
         quality: Video quality setting
         enable_subtitles: Whether to add subtitles
-        celebrity: Celebrity for lip-synced video (drake, sydney_sweeney)
+        celebrity: Celebrity for lip-synced video (drake, sydney_sweeney) - used as fallback
+                   Note: Celebrity is now automatically selected per segment based on speaker:
+                   - Male characters (Alex, Jamie, etc.) -> Drake
+                   - Female characters (Maya, Emma, etc.) -> Sydney Sweeney
         resume_from_job: Optional job ID to resume from (skips cleanup and completed steps)
     """
     try:
@@ -593,7 +596,7 @@ async def generate_video_pipeline(
                         manim_file=manim_file,
                         output_dir=manim_output_dir,
                         quality=quality,
-                        aspect_ratio="9:16",  # Mobile-friendly 9:16 aspect ratio
+                        aspect_ratio="9:8",  # 9:8 aspect ratio for top half (will be stacked with 9:8 bottom to make 9:16)
                         progress_callback=lambda msg, prog: asyncio.create_task(
                             send_progress_update(job_id, msg, prog)
                         ),
@@ -636,8 +639,11 @@ async def generate_video_pipeline(
 
         if completed_steps.get("celebrity_videos"):
             logger.info("⏩ Skipping celebrity video generation (already completed)")
-            # Load existing celebrity videos
-            celebrity_video_segments = sorted(list(celebrity_video_dir.glob("segment_*.mp4")))
+            # Load existing trimmed celebrity videos (prefer trimmed versions)
+            celebrity_video_segments = sorted(list(celebrity_video_dir.glob("segment_*_trimmed.mp4")))
+            if not celebrity_video_segments:
+                # Fallback to non-trimmed if trimmed don't exist (backwards compatibility)
+                celebrity_video_segments = sorted(list(celebrity_video_dir.glob("segment_*.mp4")))
             logger.info(f"Using {len(celebrity_video_segments)} existing celebrity videos")
             await send_progress_update(job_id, "Celebrity videos loaded from cache", 70)
         else:
@@ -661,6 +667,41 @@ async def generate_video_pipeline(
                 # Generate celebrity video for this segment
                 celebrity_segment_path = celebrity_video_dir / f"segment_{idx:03d}.mp4"
 
+                # Extract speaker from audio filename (format: segment_XXX_SpeakerName.mp3)
+                # Map speaker to celebrity image based on voice type:
+                # - Male voices (onyx, echo, fable) -> Drake
+                # - Female voices (nova, shimmer, alloy) -> Sydney Sweeney
+                speaker = audio_segment_path.stem.split('_')[-1]  # Get speaker name from filename
+
+                # Get the voice assigned to this speaker from the script
+                # The script uses the first speaker as "alloy" (typically assigned to Alex)
+                # and alternates voices for subsequent speakers
+                # For now, we'll use character names to determine celebrity
+                # Common patterns: Alex/Jamie (boy names) -> Drake, Maya/Emma (girl names) -> Sydney
+
+                # Define male and female character names (expand as needed)
+                male_names = ["alex", "jamie", "john", "mike", "tom", "sam"]
+                female_names = ["maya", "emma", "sarah", "lisa", "anna", "jane"]
+
+                speaker_lower = speaker.lower()
+
+                # Map speaker to celebrity based on name
+                if speaker_lower in male_names or speaker_lower.endswith("alex"):
+                    segment_celebrity_image = CELEBRITY_IMAGES["drake"]
+                    logger.info(f"Segment {idx}: Using Drake for {speaker}")
+                elif speaker_lower in female_names or speaker_lower.endswith("maya"):
+                    segment_celebrity_image = CELEBRITY_IMAGES["sydney_sweeney"]
+                    logger.info(f"Segment {idx}: Using Sydney Sweeney for {speaker}")
+                else:
+                    # Fallback: alternate based on segment index (even = Drake, odd = Sydney)
+                    # This works well for 2-person conversations
+                    if idx % 2 == 0:
+                        segment_celebrity_image = CELEBRITY_IMAGES["drake"]
+                        logger.info(f"Segment {idx}: Using Drake for unknown speaker '{speaker}' (even index)")
+                    else:
+                        segment_celebrity_image = CELEBRITY_IMAGES["sydney_sweeney"]
+                        logger.info(f"Segment {idx}: Using Sydney Sweeney for unknown speaker '{speaker}' (odd index)")
+
                 # Use varied prompts for natural variety
                 prompts = [
                     "natural talking expression, engaging eye contact, friendly smile, slight head nod",
@@ -672,14 +713,30 @@ async def generate_video_pipeline(
                 prompt = prompts[idx % len(prompts)]
 
                 await img_to_video_gen.generate_video_from_image(
-                    image_path=celebrity_image,
+                    image_path=segment_celebrity_image,
                     duration=segment_duration,
                     prompt=prompt,
                     output_path=celebrity_segment_path,
                     aspect_ratio="9:16",
                 )
-                celebrity_video_segments.append(celebrity_segment_path)
-                logger.info(f"Celebrity video segment {idx} generated: {celebrity_segment_path}")
+
+                # CRITICAL: Trim video to EXACT audio duration to prevent sync drift
+                # The image-to-video models (Seedance/Kling) don't generate exact durations
+                trimmed_segment_path = celebrity_video_dir / f"segment_{idx:03d}_trimmed.mp4"
+                logger.info(f"Trimming celebrity video {idx} to exact duration: {segment_duration:.2f}s")
+
+                await video_stitcher.trim_video_to_duration(
+                    video_path=celebrity_segment_path,
+                    duration=segment_duration,
+                    output_path=trimmed_segment_path,
+                )
+
+                # Verify trimmed video duration
+                trimmed_duration = await video_stitcher._get_duration(trimmed_segment_path)
+                logger.info(f"Trimmed video {idx} duration: {trimmed_duration:.2f}s (target: {segment_duration:.2f}s)")
+
+                celebrity_video_segments.append(trimmed_segment_path)
+                logger.info(f"Celebrity video segment {idx} trimmed and ready: {trimmed_segment_path}")
 
         # Step 8: Lip-sync Each Celebrity Video Segment with Its Audio
         lipsynced_video_dir = job_dir / "lipsynced_videos"
@@ -712,8 +769,26 @@ async def generate_video_pipeline(
                     audio_path=audio_segment,
                     output_path=lipsynced_segment_path,
                 )
-                lipsynced_segments.append(lipsynced_segment_path)
-                logger.info(f"Lip-synced segment {idx} created: {lipsynced_segment_path}")
+
+                # Verify lip-synced video duration matches audio
+                lipsynced_duration = await video_stitcher._get_duration(lipsynced_segment_path)
+                audio_duration_check = await video_stitcher._get_duration(audio_segment)
+                logger.info(f"Lip-synced segment {idx} duration: {lipsynced_duration:.2f}s (audio: {audio_duration_check:.2f}s)")
+
+                # If lip-sync changed duration, trim to match audio exactly
+                if abs(lipsynced_duration - audio_duration_check) > 0.1:  # More than 100ms difference
+                    logger.warning(f"Lip-sync changed duration by {abs(lipsynced_duration - audio_duration_check):.2f}s, trimming to match audio")
+                    trimmed_lipsynced_path = lipsynced_video_dir / f"lipsynced_{idx:03d}_trimmed.mp4"
+                    await video_stitcher.trim_video_to_duration(
+                        video_path=lipsynced_segment_path,
+                        duration=audio_duration_check,
+                        output_path=trimmed_lipsynced_path,
+                    )
+                    lipsynced_segments.append(trimmed_lipsynced_path)
+                    logger.info(f"Lip-synced segment {idx} trimmed to exact audio duration: {trimmed_lipsynced_path}")
+                else:
+                    lipsynced_segments.append(lipsynced_segment_path)
+                    logger.info(f"Lip-synced segment {idx} duration matches audio: {lipsynced_segment_path}")
 
             # Step 8b: Concatenate all lip-synced segments into one video
             await send_progress_update(job_id, "Concatenating lip-synced segments...", 88)
@@ -837,7 +912,7 @@ async def generate_video(
         else:
             # Clean up before creating new job
             logger.info("Cleaning up old outputs before starting new job...")
-            cleanup_old_outputs(skip_cleanup=False)
+            # cleanup_old_outputs(skip_cleanup=False)
 
             job_id = str(uuid.uuid4())
             logger.info(f"Created new job: {job_id}")

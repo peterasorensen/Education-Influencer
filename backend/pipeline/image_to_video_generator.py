@@ -11,6 +11,7 @@ from pathlib import Path
 import asyncio
 import replicate
 import os
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +99,9 @@ class ImageToVideoGenerator:
                 # Prepare model-specific parameters
                 if "seedance" in self.model:
                     # Seedance model: accepts 2-12 seconds, any integer
-                    video_duration = max(2, min(12, int(duration)))  # Clamp to 2-12 range
-                    logger.info(f"Running Seedance model with duration: {video_duration}s, aspect_ratio: {aspect_ratio}, resolution: 480p")
+                    # Use ceiling to ensure we generate enough video (will trim to exact duration after)
+                    video_duration = max(2, min(12, math.ceil(duration)))  # Clamp to 2-12 range, use ceiling
+                    logger.info(f"Running Seedance model with duration: {video_duration}s (requested: {duration:.2f}s, will trim after), aspect_ratio: {aspect_ratio}, resolution: 480p")
 
                     model_input = {
                         "prompt": prompt,

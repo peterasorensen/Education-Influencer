@@ -584,7 +584,7 @@ Fix the error using safe Manim patterns. Keep visuals similar but use reliable m
             output_dir: Directory to save rendered video
             scene_name: Name of the scene class to render
             quality: Quality flag (low_quality, medium_quality, high_quality)
-            aspect_ratio: Video aspect ratio (default: 16:9, use 9:16 for mobile)
+            aspect_ratio: Video aspect ratio (default: 16:9, use 9:16 for full mobile, 9:8 for half-screen top/bottom split)
             progress_callback: Optional callback for progress updates
 
         Returns:
@@ -610,16 +610,25 @@ Fix the error using safe Manim patterns. Keep visuals similar but use reliable m
 
             # Calculate resolution based on aspect ratio
             # For 9:16 (mobile portrait), we'll use 1080x1920 for high quality
+            # For 9:8 (half-screen for top/bottom split), we'll use 1080x960
             # For 16:9 (standard), we'll use the default manim resolutions
             resolution_args = []
             if aspect_ratio == "9:16":
-                # Mobile portrait resolution
+                # Mobile portrait resolution (full screen)
                 if quality == "high_quality":
                     resolution_args = ["-r", "1080,1920"]
                 elif quality == "medium_quality":
                     resolution_args = ["-r", "720,1280"]
                 else:  # low_quality
                     resolution_args = ["-r", "480,854"]
+            elif aspect_ratio == "9:8":
+                # Half-screen portrait (for top/bottom compositing)
+                if quality == "high_quality":
+                    resolution_args = ["-r", "1080,960"]
+                elif quality == "medium_quality":
+                    resolution_args = ["-r", "720,640"]
+                else:  # low_quality
+                    resolution_args = ["-r", "480,427"]
 
             # Run manim render command
             cmd = [
