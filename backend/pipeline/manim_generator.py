@@ -494,13 +494,19 @@ Return ONLY Python code."""
         # Format instructions with clear timestamp information
         instructions_with_timing = []
         for inst in visual_instructions:
+            # Support both legacy (manim_elements) and new storyboard (elements) formats
             timing_info = {
                 "timestamp": inst.get("timestamp", {}),
                 "narration": inst.get("narration", ""),
                 "visual_type": inst.get("visual_type", ""),
                 "description": inst.get("description", ""),
-                "manim_elements": inst.get("manim_elements", []),
+                "manim_elements": inst.get("manim_elements") or inst.get("elements", []),
                 "builds_on": inst.get("builds_on", ""),
+                "region": inst.get("region", ""),
+                "cleanup": inst.get("cleanup", []),
+                "transitions": inst.get("transitions", []),
+                "properties": inst.get("properties", {}),
+                "word_sync": inst.get("word_sync", []),
             }
             instructions_with_timing.append(timing_info)
 
@@ -514,188 +520,23 @@ Return ONLY Python code."""
             word_sync_note += "\nEach scene includes 'word_sync' array with precise timing for dynamic effects."
             word_sync_note += "\nYou MUST implement these synchronized animations to make content POP!"
 
-        user_prompt = f"""Topic: {topic}
-Total duration: {target_duration} seconds
+        user_prompt = f"""Generate Manim code for this educational animation.
 
-Timestamped visual instructions:
+Topic: {topic}
+Duration: {target_duration} seconds
+
+VISUAL INSTRUCTIONS (IMPLEMENT ALL OF THESE IN ORDER):
 {instructions_json}
 {word_sync_note}
 
-CRITICAL IMPLEMENTATION REQUIREMENTS FOR 9:8 CANVAS:
-
-1. TEXT WRAPPING (MANDATORY):
-   - Include the wrap_text() helper function at the TOP of your class (before construct method)
-   - Wrap ALL text using wrap_text() before creating Text objects
-   - Example: title = Text(wrap_text("Long title text here", font_size=48), font_size=48)
-   - Never exceed 8.8 units width for text
-
-2. SPATIAL TRACKING (MANDATORY):
-   - Include the is_position_clear() and place_object() helper functions
-   - Initialize placed_objects = [] at start of construct()
-   - Use place_object() for EVERY object you create
-   - Check is_position_clear() before placing if avoiding overlaps is critical
-
-3. OBJECT LIFECYCLE (MANDATORY):
-   - Initialize active_objects = [] at start of construct()
-   - Add objects to active_objects when created
-   - Remove old objects from active_objects before adding new ones in the same region
-   - Use: self.play(*[FadeOut(obj) for obj in active_objects]) to clean up
-
-4. POSITIONING (RESPECT 9:8 BOUNDARIES):
-   - NEVER use positions outside: x ∈ [-5.4, 5.4], y ∈ [-4.8, 4.8]
-   - Use the positioning guidelines (top region for titles, center for main content, etc.)
-   - Leave margins: don't place objects at exact boundaries
-
-CRITICAL BANS - THESE WILL CRASH (DO NOT USE):
-- AnnularSector → BANNED! Use Sector(angle=PI/3) or Annulus(inner_radius=0.5, outer_radius=1)
-- ShowCreation → BANNED! Use Create instead
-- GrowArrow → BANNED! Use Create or FadeIn
-- ParticleSystem → BANNED! Does not exist. Use VGroup of Dots with LaggedStart animations
-- set_width/set_height with stretch=True → BANNED! Use .scale() or .scale_to_fit_width() instead
-- align_to() after set_width/set_height → Can cause errors, do positioning separately
-
-IMPLEMENT THE VISUAL INSTRUCTIONS CREATIVELY:
-- Read the "description" field and bring it to life with engaging animations
-- Follow the "cleanup" field to remove old content (critical for avoiding overlaps!)
-- Use the suggested "manim_elements" but add creative flair
-- Make animations smooth and visually interesting
-- Use colors, gradients, and effects to enhance visual appeal
-- Add particle effects, glowing, highlighting where appropriate
-- Chain animations together smoothly
-
-IMPLEMENT WORD-SYNC ACTIONS (CRITICAL!):
-- Each instruction may include "word_sync" array with synchronized animations
-- Format: {"word": "Einstein", "time": 2.5, "action": "flash", "target": "title"}
-- MUST implement ALL word_sync actions using the patterns shown above
-- Include sync_to_word() helper function in your class (before construct method)
-- Map targets to actual objects you create (e.g., "title" → title variable)
-- Use precise timing from word_sync data
-- Make animations SHORT and PUNCHY (0.3-0.6s each) so they don't overlap
-- Example implementation:
-  ```python
-  # Add helper at class level (before construct)
-  def sync_to_word(self, target_time, elapsed_time):
-      if target_time > elapsed_time:
-          self.wait(target_time - elapsed_time)
-      return target_time
-
-  # In construct method:
-  for sync_action in scene_word_sync:
-      word = sync_action["word"]
-      time = sync_action["time"]
-      action = sync_action["action"]
-      target = sync_action["target"]  # Map this to your actual object
-
-      elapsed_time = self.sync_to_word(time, elapsed_time)
-
-      if action == "indicate":
-          self.play(Indicate(target_object, scale_factor=1.3), run_time=0.4)
-          elapsed_time += 0.4
-      elif action == "flash":
-          self.play(Flash(target_object, color=YELLOW), run_time=0.3)
-          elapsed_time += 0.3
-      # ... handle all action types
-  ```
-
-CONTENT CLEANUP (READ "cleanup" FIELD):
-- If cleanup says "fade out intro title" → self.play(FadeOut(title_object))
-- If cleanup says "remove previous diagram" → self.play(FadeOut(old_diagram)); self.remove(old_diagram)
-- If cleanup says "clear screen" → fade out all previous objects
-- Keep track of all created objects so you can remove them later
-
-CONCRETE CODE EXAMPLES (copy these patterns!):
-
-1. Draw and shade half a rectangle:
-```python
-rect = Rectangle(width=4, height=2)
-self.play(Create(rect))
-# Divide in half with a vertical line
-divider = Line(rect.get_top(), rect.get_bottom())
-self.play(Create(divider))
-# Shade left half - use a NEW rectangle, don't try to clip!
-left_half = Rectangle(width=2, height=2).align_to(rect, LEFT).set_fill(BLUE, opacity=0.5)
-self.play(FadeIn(left_half))
-```
-
-2. Draw fraction with visual representation:
-```python
-fraction = MathTex(r"\\frac{{3}}{{4}}").set_color(RED)
-self.play(Write(fraction))
-# Show 4 boxes, shade 3 of them
-boxes = VGroup(*[Square(side_length=0.5).shift(RIGHT*i*0.6) for i in range(4)])
-self.play(Create(boxes))
-shaded = VGroup(*[boxes[i].copy().set_fill(RED, opacity=0.6) for i in range(3)])
-self.play(FadeIn(shaded))
-```
-
-3. Highlight or emphasize something:
-```python
-obj = Circle()
-self.play(Indicate(obj))  # Pulse effect
-# OR
-self.play(Circumscribe(obj))  # Draw circle around it
-# OR
-highlight = SurroundingRectangle(obj, color=YELLOW)
-self.play(Create(highlight))
-```
-
-4. Grid of squares:
-```python
-# 4x2 grid
-grid = VGroup(*[Square(side_length=0.5).move_to(RIGHT*i*0.6 + UP*j*0.6)
-                for i in range(4) for j in range(2)])
-self.play(LaggedStart(*[Create(sq) for sq in grid]))
-# Shade first 3 squares
-for i in range(3):
-    if i < len(grid):  # ALWAYS check length!
-        self.play(grid[i].animate.set_fill(BLUE, opacity=0.5))
-```
-
-5. Water molecule or atoms:
-```python
-oxygen = Circle(radius=0.5, color=RED).set_fill(RED, opacity=0.8)
-h1 = Circle(radius=0.3, color=WHITE).set_fill(WHITE, opacity=0.8).next_to(oxygen, LEFT)
-h2 = Circle(radius=0.3, color=WHITE).set_fill(WHITE, opacity=0.8).next_to(oxygen, RIGHT)
-bond1 = Line(oxygen.get_left(), h1.get_right())
-bond2 = Line(oxygen.get_right(), h2.get_left())
-molecule = VGroup(oxygen, h1, h2, bond1, bond2)
-self.play(LaggedStart(*[FadeIn(obj) for obj in molecule]))
-```
-
-CRITICAL - DO NOT HALLUCINATE:
-- NO .clip_line(), .clip_region(), .clip_path() - these don't exist!
-- To show partial shapes, create NEW shapes that are already the right size
-- To shade part of a rectangle, create a smaller rectangle with .set_fill()
-- Example: "shade left half" → Rectangle(width=2).align_to(original, LEFT).set_fill(BLUE, 0.5)
-
-SPATIAL POSITIONING (CRITICAL - 9:8 CANVAS BOUNDARIES):
-- 9:8 aspect ratio boundaries: x ∈ [-5.4, 5.4], y ∈ [-4.8, 4.8] (NEVER EXCEED!)
-- This is NOT 16:9! Horizontal space is MORE LIMITED than standard Manim
-- SAFE positioning: .move_to(np.array([x, y, 0])) with x ∈ [-4.5, 4.5], y ∈ [-4.0, 4.0]
-- UNSAFE: .to_edge(LEFT/RIGHT) might go off screen! Use explicit coordinates instead
-- UNSAFE: Large multipliers like DOWN*3, UP*4, LEFT*5 will DEFINITELY go OFF SCREEN!
-- Layout zones for 9:8: TOP (y=3.5 to 4.5), UPPER (y=1.5 to 3.0), CENTER (y=-1.0 to 1.5), LOWER (y=-3.0 to -1.0), BOTTOM (y=-4.5 to -3.0)
-
-REMOVE OLD CONTENT (CRITICAL):
-- Intro titles: FadeOut after 2-3 seconds, don't let them stay forever
-- Old diagrams: FadeOut or move off-screen when no longer needed
-- Keep screen clean: self.play(FadeOut(old_obj)) before adding new content
-- If building on previous: move old content aside (shift LEFT/UP) or fade to low opacity
-- Example: self.play(FadeOut(title)); self.remove(title) after intro
-
-AVOID OVERLAPS:
-- Before adding new content, remove or move old content
-- Use .next_to(other, DOWN, buff=0.5) to position relative to existing objects
-- Scale objects if needed: obj.scale(0.7) to make room
-- Clear the screen periodically: self.play(*[FadeOut(obj) for obj in [obj1, obj2, obj3]])
-
-TIMING (CRITICAL):
-1. Track elapsed_time variable
-2. Before each animation: wait_time = timestamp["start"] - elapsed_time; self.wait(wait_time)
-3. Use run_time in self.play() for precise duration control
-4. Update elapsed_time after each animation
-
-BE CREATIVE with visual implementation while following the core concept!
+Follow ALL system prompt rules:
+- 9:8 canvas (x: -5.4 to 5.4, y: -4.8 to 4.8)
+- Wrap text with wrap_text() helper
+- Use place_object_safe() for positioning
+- Track elapsed_time for timestamp synchronization
+- Implement each scene's "description" with suggested "manim_elements"
+- Respect "cleanup" arrays - remove old objects
+- Implement all "word_sync" actions if present
 
 Class name: EducationalScene"""
 
