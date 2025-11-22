@@ -45,7 +45,7 @@ export type CelebritySelection =
 // New multi-celebrity types
 export interface CelebrityConfig {
   mode: 'preset' | 'custom';
-  name?: 'drake' | 'sydney_sweeney';  // For preset
+  name?: string;  // For preset - dynamically loaded from backend
   photoId?: string;  // For custom
   audioId?: string;  // For custom
   userId?: string;

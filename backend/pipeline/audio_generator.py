@@ -161,6 +161,16 @@ class AudioGenerator:
                 logger.info(f"  ⏱️  Tortoise TTS for '{speaker}' took {elapsed:.2f}s")
                 return result
 
+            # Use MiniMax voice cloning if enabled
+            if self.audio_model and "minimax" in self.audio_model.lower():
+                result = await self._generate_minimax_audio(
+                    text, speaker, output_path,
+                    speaker_celebrity_map, celebrity_audio_samples
+                )
+                elapsed = time.time() - segment_start
+                logger.info(f"  ⏱️  MiniMax TTS for '{speaker}' took {elapsed:.2f}s")
+                return result
+
             # Otherwise use OpenAI TTS (default)
             logger.info(f"Generating audio for {speaker} with voice {voice}")
 
@@ -304,6 +314,135 @@ class AudioGenerator:
 
         except Exception as e:
             logger.error(f"Failed to generate Tortoise TTS audio for {speaker}: {e}")
+            # Fall back to OpenAI TTS
+            logger.warning(f"Falling back to OpenAI TTS for {speaker}")
+            return await self._generate_openai_audio(text, speaker, output_path)
+
+    async def _generate_minimax_audio(
+        self,
+        text: str,
+        speaker: str,
+        output_path: Path,
+        speaker_celebrity_map: Optional[Dict[str, str]] = None,
+        celebrity_audio_samples: Optional[Dict[str, Path]] = None
+    ) -> Path:
+        """
+        Generate audio using MiniMax voice cloning via Replicate.
+
+        Args:
+            text: The text to convert to speech
+            speaker: The speaker name (determines audio sample)
+            output_path: Path to save the audio file
+            speaker_celebrity_map: Optional mapping from speaker name to celebrity key
+            celebrity_audio_samples: Optional mapping from celebrity key to audio sample path
+
+        Returns:
+            Path to the generated audio file
+
+        Raises:
+            Exception: If audio generation fails
+        """
+        try:
+            # Get audio sample for this speaker
+            audio_sample = self._get_audio_sample_for_speaker(
+                speaker, speaker_celebrity_map, celebrity_audio_samples
+            )
+
+            if not audio_sample or not audio_sample.exists():
+                logger.warning(f"Audio sample not found for {speaker}, falling back to OpenAI TTS")
+                return await self._generate_openai_audio(text, speaker, output_path)
+
+            logger.info(f"Generating MiniMax voice cloning audio for {speaker} using sample: {audio_sample}")
+
+            # Run MiniMax voice cloning model via Replicate
+            with open(audio_sample, "rb") as audio_file:
+                output = await asyncio.to_thread(
+                    replicate.run,
+                    self.audio_model,
+                    input={
+                        "text": text,  # Assuming text parameter exists (may need adjustment)
+                        "voice_file": audio_file,
+                        "model": "speech-02-turbo",  # Default to turbo model for speed
+                        "accuracy": 0.7,  # Default accuracy threshold
+                        "need_noise_reduction": False,
+                        "need_volume_normalization": False,
+                    }
+                )
+
+            # Download the output audio
+            if output:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Handle different output types from Replicate
+                import httpx
+
+                # Extract URL from output (could be string, FileOutput, or iterator)
+                if isinstance(output, str):
+                    output_url = output
+                elif hasattr(output, 'url'):
+                    output_url = output.url
+                elif hasattr(output, '__iter__') and not isinstance(output, str):
+                    # Iterator - take first item
+                    output_url = next(iter(output))
+                    if hasattr(output_url, 'url'):
+                        output_url = output_url.url
+                else:
+                    output_url = str(output)
+
+                logger.info(f"Downloading MiniMax output from: {output_url}")
+
+                # Download to temporary file first
+                temp_path = output_path.with_suffix('.tmp.mp3')
+
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.get(output_url)
+                    response.raise_for_status()
+
+                    with open(temp_path, "wb") as f:
+                        f.write(response.content)
+
+                logger.info(f"Downloaded MiniMax output to {temp_path} ({len(response.content)} bytes)")
+
+                # Re-encode using ffmpeg to ensure compatibility with pydub
+                import subprocess
+
+                try:
+                    logger.info(f"Re-encoding MP3 for pydub compatibility...")
+                    result = await asyncio.to_thread(
+                        subprocess.run,
+                        [
+                            "ffmpeg", "-y", "-i", str(temp_path),
+                            "-acodec", "libmp3lame", "-ab", "192k",
+                            "-ar", "24000",  # Standard sample rate
+                            str(output_path)
+                        ],
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    if result.returncode != 0:
+                        logger.error(f"ffmpeg re-encoding failed: {result.stderr}")
+                        # Fall back to using temp file as-is
+                        import shutil
+                        shutil.move(str(temp_path), str(output_path))
+                    else:
+                        # Remove temp file
+                        temp_path.unlink()
+                        logger.info(f"Successfully re-encoded MP3")
+
+                except Exception as e:
+                    logger.error(f"Re-encoding failed: {e}, using original file")
+                    # Fall back to using temp file as-is
+                    import shutil
+                    shutil.move(str(temp_path), str(output_path))
+
+                logger.info(f"MiniMax audio saved to {output_path}")
+                return output_path
+            else:
+                raise Exception("MiniMax voice cloning returned no output")
+
+        except Exception as e:
+            logger.error(f"Failed to generate MiniMax audio for {speaker}: {e}")
             # Fall back to OpenAI TTS
             logger.warning(f"Falling back to OpenAI TTS for {speaker}")
             return await self._generate_openai_audio(text, speaker, output_path)

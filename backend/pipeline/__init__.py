@@ -26,6 +26,7 @@ from .image_to_video_generator import ImageToVideoGenerator
 from .lipsync_generator import LipsyncGenerator
 from .video_stitcher import VideoStitcher
 from .resume_detector import ResumeDetector
+from .celebrity_loader import CelebrityLoader  # NEW - Dynamic celebrity loading
 
 __all__ = [
     "ScriptGenerator",
@@ -47,4 +48,5 @@ __all__ = [
     "LipsyncGenerator",
     "VideoStitcher",
     "ResumeDetector",
+    "CelebrityLoader",  # NEW - Dynamic celebrity loading
 ]

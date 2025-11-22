@@ -20,6 +20,10 @@ export interface ProgressUpdate {
 export interface VideoGenerationRequest {
   topic: string;
   renderer?: 'manim' | 'remotion'; // Animation renderer (default: manim)
+  script_model?: 'gpt-4o' | 'gpt-4o-mini' | 'gpt-3.5-turbo'; // Script generation model
+  audio_model?: 'openai-tts' | 'tortoise-tts' | 'minimax-voice-cloning'; // Audio generation model
+  video_model?: 'seedance' | 'kling-turbo'; // Image-to-video model
+  lipsync_model?: 'tmappdev' | 'kling' | 'pixverse'; // Lip sync model
 }
 
 export interface VideoGenerationResponse {

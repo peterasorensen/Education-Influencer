@@ -14,6 +14,7 @@ import type { CelebrityConfig } from './types/media';
 import Header from './components/Header';
 import TopicInput from './components/TopicInput';
 import RendererSelector from './components/RendererSelector';
+import ModelSelector from './components/ModelSelector';
 import JobResume from './components/JobResume';
 import ProgressTracker from './components/ProgressTracker';
 import VideoPlayer from './components/VideoPlayer';
@@ -25,6 +26,10 @@ import { CelebritySelector } from './components/celebrity/CelebritySelector';
 function App() {
   const [topic, setTopic] = useState('');
   const [renderer, setRenderer] = useState<'manim' | 'remotion'>('manim');
+  const [scriptModel, setScriptModel] = useState<'gpt-4o' | 'gpt-4o-mini' | 'gpt-3.5-turbo'>('gpt-4o');
+  const [audioModel, setAudioModel] = useState<'openai-tts' | 'tortoise-tts' | 'minimax-voice-cloning'>('openai-tts');
+  const [videoModel, setVideoModel] = useState<'seedance' | 'kling-turbo'>('seedance');
+  const [lipsyncModel, setLipsyncModel] = useState<'tmappdev' | 'kling' | 'pixverse'>('tmappdev');
   const [isGenerating, setIsGenerating] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [progressSteps, setProgressSteps] = useState<Map<PipelineStep, ProgressUpdate>>(new Map());
@@ -106,10 +111,14 @@ function App() {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
       const requestBody: any = resumeJobId
-        ? { topic: topicText, resume_job_id: resumeJobId, renderer }
+        ? { topic: topicText, resume_job_id: resumeJobId, renderer, script_model: scriptModel, audio_model: audioModel, video_model: videoModel, lipsync_model: lipsyncModel }
         : {
             topic: topicText,
             renderer,
+            script_model: scriptModel,
+            audio_model: audioModel,
+            video_model: videoModel,
+            lipsync_model: lipsyncModel,
             refined_context: context,
             celebrities
           };
@@ -300,6 +309,18 @@ function App() {
                 <RendererSelector
                   value={renderer}
                   onChange={setRenderer}
+                  disabled={isGenerating}
+                />
+
+                <ModelSelector
+                  scriptModel={scriptModel}
+                  audioModel={audioModel}
+                  videoModel={videoModel}
+                  lipsyncModel={lipsyncModel}
+                  onScriptModelChange={setScriptModel}
+                  onAudioModelChange={setAudioModel}
+                  onVideoModelChange={setVideoModel}
+                  onLipsyncModelChange={setLipsyncModel}
                   disabled={isGenerating}
                 />
 

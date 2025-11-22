@@ -16,15 +16,16 @@ logger = logging.getLogger(__name__)
 class ScriptGenerator:
     """Generate multi-voice educational scripts using OpenAI GPT-4o."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model: str = "gpt-4o"):
         """
         Initialize the script generator.
 
         Args:
             api_key: OpenAI API key
+            model: Model to use (gpt-4o, gpt-4o-mini, gpt-3.5-turbo)
         """
         self.client = AsyncOpenAI(api_key=api_key)
-        self.model = "gpt-4o"
+        self.model = model
 
     async def generate_script(
         self,

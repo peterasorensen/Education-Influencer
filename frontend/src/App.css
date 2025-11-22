@@ -2015,6 +2015,14 @@ body {
   background: var(--gradient-accent);
 }
 
+.celebrity-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
 .thumbnail-placeholder {
   width: 100%;
   height: 100%;
@@ -2061,6 +2069,39 @@ body {
   font-weight: 700;
   color: var(--color-text-primary);
   margin: 0;
+}
+
+.no-audio-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-warning);
+  margin: 0;
+  padding: 0.5rem;
+  background: rgba(255, 152, 0, 0.1);
+  border-radius: var(--radius-sm);
+}
+
+.loading-state,
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.error-state p {
+  color: var(--color-danger);
+  margin: 0.5rem 0;
+}
+
+.error-help {
+  font-size: 0.875rem;
+  color: var(--color-text-muted) !important;
 }
 
 .celebrity-description {
@@ -2825,4 +2866,107 @@ body {
     width: 24px;
     height: 24px;
   }
+}
+
+/* Model Selector Styles */
+.model-selector-container {
+  margin: 1.5rem 0;
+  padding: 1.5rem;
+  background: rgba(103, 126, 234, 0.08);
+  border: 2px solid rgba(103, 126, 234, 0.2);
+  border-radius: var(--radius-md);
+}
+
+.model-section {
+  margin-bottom: 1.5rem;
+}
+
+.model-section:last-child {
+  margin-bottom: 0;
+}
+
+.model-label {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 0.75rem;
+  letter-spacing: 0.3px;
+}
+
+.model-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.model-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.model-option:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(103, 126, 234, 0.3);
+  transform: translateY(-1px);
+}
+
+.model-option.selected {
+  background: rgba(103, 126, 234, 0.15);
+  border-color: var(--color-primary);
+}
+
+.model-option input[type="radio"] {
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.model-option .option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.model-option .option-text strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: 0.2px;
+}
+
+.model-option .option-desc {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  line-height: 1.3;
+}
+
+.model-option.selected .option-text strong {
+  color: var(--color-primary);
+}
+
+.model-option.selected .option-desc {
+  color: rgba(103, 126, 234, 0.8);
+}
+
+.model-option input[type="radio"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-option:has(input[type="radio"]:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
 }

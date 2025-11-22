@@ -35,6 +35,7 @@ from pipeline import (
     LipsyncGenerator,
     VideoStitcher,
     ResumeDetector,
+    CelebrityLoader,  # NEW - Dynamic celebrity loading
 )
 
 # Media upload modules
@@ -92,16 +93,14 @@ else:
 BASE_OUTPUT_DIR = Path("./output")
 BASE_OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Celebrity assets
+# Celebrity assets - Dynamic loading
 ASSETS_DIR = Path("./assets")
-CELEBRITY_IMAGES = {
-    "drake": ASSETS_DIR / "drake" / "drake.jpg",
-    "sydney_sweeney": ASSETS_DIR / "sydneysweeney" / "sydneysweeney.png",
-}
-CELEBRITY_AUDIO_SAMPLES = {
-    "drake": ASSETS_DIR / "drake" / "drake.mp3",
-    "sydney_sweeney": ASSETS_DIR / "sydneysweeney" / "sydneysweeney.mp3",
-}
+celebrity_loader = CelebrityLoader(ASSETS_DIR)
+CELEBRITY_IMAGES = celebrity_loader.get_celebrity_images()
+CELEBRITY_AUDIO_SAMPLES = celebrity_loader.get_celebrity_audio()
+ALL_CELEBRITIES = celebrity_loader.get_all_celebrities()
+
+logger.info(f"Dynamically loaded {len(ALL_CELEBRITIES)} celebrities: {list(ALL_CELEBRITIES.keys())}")
 
 # Initialize media upload modules
 media_validator = MediaValidator()
@@ -169,6 +168,22 @@ class VideoGenerationRequest(BaseModel):
     renderer: str = Field(
         default="manim",
         description="Animation renderer to use (manim, remotion)",
+    )
+    script_model: str = Field(
+        default="gpt-4o",
+        description="Model for script generation (gpt-4o, gpt-4o-mini, gpt-3.5-turbo)",
+    )
+    audio_model: str = Field(
+        default="openai-tts",
+        description="Model for audio generation (openai-tts, tortoise-tts, minimax-voice-cloning)",
+    )
+    lipsync_model: str = Field(
+        default="tmappdev",
+        description="Model for lip sync (tmappdev, kling, pixverse)",
+    )
+    video_model: str = Field(
+        default="seedance",
+        description="Model for image-to-video generation (seedance, kling-turbo)",
     )
     resume_job_id: Optional[str] = Field(
         default=None,
@@ -610,12 +625,21 @@ async def generate_video_pipeline(
                             celebrity_audio_map[celeb_key] = custom_audio_path
                             logger.info(f"Mapped {celeb_key} to custom audio: {custom_audio_path}")
 
-        # Initialize pipeline modules
-        script_gen = ScriptGenerator(OPENAI_API_KEY)
+        # Initialize pipeline modules with user-selected models
+        script_gen = ScriptGenerator(OPENAI_API_KEY, model=script_model)
+
+        # Map audio_model string to actual model identifier
+        audio_model_map = {
+            "openai-tts": None,  # None means use OpenAI TTS (default)
+            "tortoise-tts": "lucataco/tortoise-tts:latest",
+            "minimax-voice-cloning": "minimax/voice-cloning"
+        }
+        actual_audio_model = audio_model_map.get(audio_model)
+
         audio_gen = AudioGenerator(
             api_key=OPENAI_API_KEY,
             replicate_token=REPLICATE_API_TOKEN,
-            audio_model=AUDIO_MODEL,
+            audio_model=actual_audio_model,
             celebrity_audio_samples=CELEBRITY_AUDIO_SAMPLES,
         )
         timestamp_ext = TimestampExtractor(OPENAI_API_KEY)
@@ -625,12 +649,15 @@ async def generate_video_pipeline(
         manim_gen = ManimGenerator(OPENAI_API_KEY)
         remotion_gen = RemotionGenerator(OPENAI_API_KEY)  # NEW - Alternative to Manim
 
-        # Image-to-video with configurable model (defaults to seedance for cost savings)
-        img_to_video_model = os.getenv("IMAGE_TO_VIDEO_MODEL")
-        img_to_video_gen = ImageToVideoGenerator(REPLICATE_API_TOKEN, model=img_to_video_model)
+        # Image-to-video with user-selected model
+        video_model_map = {
+            "seedance": "bytedance/seedance-1-pro-fast",
+            "kling-turbo": "kwaivgi/kling-v2.5-turbo-pro"
+        }
+        actual_video_model = video_model_map.get(video_model)
+        img_to_video_gen = ImageToVideoGenerator(REPLICATE_API_TOKEN, model=actual_video_model)
 
-        # Lip-sync with configurable model (defaults to kling for cost savings)
-        lipsync_model = os.getenv("LIPSYNC_MODEL")
+        # Lip-sync with user-selected model
         lipsync_gen = LipsyncGenerator(REPLICATE_API_TOKEN, model=lipsync_model)
 
         video_stitcher = VideoStitcher()
@@ -1525,6 +1552,71 @@ async def get_video(job_id: str, filename: str):
         path=video_path,
         media_type="video/mp4",
         filename=f"{job_id}_{filename}",
+    )
+
+
+@app.get("/api/celebrities")
+async def get_celebrities():
+    """
+    Get list of all available celebrities with their metadata.
+
+    Returns:
+        List of celebrities with id, name, and image URL
+    """
+    celebrities_list = []
+    for celeb_id, config in ALL_CELEBRITIES.items():
+        celebrities_list.append({
+            "id": celeb_id,
+            "name": config["name"],
+            "imageUrl": f"/api/celebrities/{celeb_id}/image",
+            "hasAudio": config.get("audio") is not None,
+        })
+
+    return {"celebrities": celebrities_list}
+
+
+@app.get("/api/celebrities/{celebrity_id}/image")
+async def get_celebrity_image(celebrity_id: str):
+    """
+    Get celebrity image file.
+
+    Args:
+        celebrity_id: Celebrity identifier
+
+    Returns:
+        Image file
+    """
+    if celebrity_id not in ALL_CELEBRITIES:
+        raise HTTPException(status_code=404, detail="Celebrity not found")
+
+    image_path = ALL_CELEBRITIES[celebrity_id].get("image")
+    if not image_path or not image_path.exists():
+        raise HTTPException(status_code=404, detail="Celebrity image not found")
+
+    # Determine media type from extension
+    extension = image_path.suffix.lower()
+    media_type_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+    }
+    media_type = media_type_map.get(extension, "image/png")
+
+    from fastapi.responses import Response
+
+    # Read image file
+    with open(image_path, 'rb') as f:
+        image_data = f.read()
+
+    # Return as Response with proper headers for inline display
+    return Response(
+        content=image_data,
+        media_type=media_type,
+        headers={
+            'Cache-Control': 'public, max-age=3600',
+        }
     )
 
 

@@ -20,7 +20,7 @@ export const CelebrityConfigPanel = ({ config, onChange }: CelebrityConfigPanelP
     }
   };
 
-  const handlePresetSelect = (name: 'drake' | 'sydney_sweeney') => {
+  const handlePresetSelect = (name: string) => {
     onChange({ mode: 'preset', name });
   };
 
