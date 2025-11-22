@@ -8,13 +8,14 @@ with multi-voice narration, Manim animations, and audio synthesis.
 import logging
 import asyncio
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
+from enum import Enum
 import os
 import uuid
 import json
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -29,11 +30,18 @@ from pipeline import (
     StoryboardGenerator,  # NEW
     LayoutEngine,  # NEW
     ManimGenerator,
+    RemotionGenerator,  # NEW - Alternative to Manim
     ImageToVideoGenerator,
     LipsyncGenerator,
     VideoStitcher,
     ResumeDetector,
 )
+
+# Media upload modules
+from pipeline.media_validator import MediaValidator
+from pipeline.media_processor import MediaProcessor
+from pipeline.media_storage import MediaStorage
+from models.media_models import PhotoMetadata, AudioMetadata
 
 # Load environment variables from .env file
 load_dotenv()
@@ -95,6 +103,11 @@ CELEBRITY_AUDIO_SAMPLES = {
     "sydney_sweeney": ASSETS_DIR / "sydneysweeney" / "sydneysweeney.mp3",
 }
 
+# Initialize media upload modules
+media_validator = MediaValidator()
+media_processor = MediaProcessor()
+media_storage = MediaStorage()
+
 
 def cleanup_old_outputs(skip_cleanup: bool = False):
     """Clean up old output directories and media folder on startup to save space."""
@@ -151,12 +164,85 @@ class VideoGenerationRequest(BaseModel):
     )
     celebrity: str = Field(
         default="drake",
-        description="Celebrity for lip-synced video (drake, sydney_sweeney)",
+        description="Celebrity for lip-synced video (LEGACY - use celebrities list instead)",
+    )
+    renderer: str = Field(
+        default="manim",
+        description="Animation renderer to use (manim, remotion)",
     )
     resume_job_id: Optional[str] = Field(
         default=None,
         description="Optional job ID to resume from (skips cleanup and completed steps)",
     )
+    refined_context: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Enhanced context from follow-up questions"
+    )
+
+    # NEW: Support multiple celebrities
+    celebrities: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="List of celebrity configurations (min 2). Each dict should have: mode, name (for preset), photo_id/audio_id (for custom), user_id"
+    )
+
+    # LEGACY: Single celebrity mode (backward compatibility)
+    celebrity_mode: str = Field(
+        default="preset",
+        description="Celebrity mode: 'preset' (drake/sydney_sweeney) or 'custom' (user uploads) - LEGACY"
+    )
+    custom_photo_id: Optional[str] = Field(
+        default=None,
+        description="Photo ID for custom celebrity (required if celebrity_mode='custom') - LEGACY"
+    )
+    custom_audio_id: Optional[str] = Field(
+        default=None,
+        description="Audio ID for custom voice (required if celebrity_mode='custom') - LEGACY"
+    )
+    user_id: str = Field(
+        default="default",
+        description="User ID for accessing custom media"
+    )
+
+
+class QuestionType(str, Enum):
+    MULTIPLE_CHOICE = "multiple_choice"
+    MULTI_SELECT = "multi_select"
+    SHORT_TEXT = "short_text"
+    TOGGLE = "toggle"
+    SLIDER = "slider"
+
+
+class FollowUpQuestion(BaseModel):
+    id: str
+    question_text: str
+    question_type: QuestionType
+    category: str
+    options: Optional[List[str]] = None
+    default_value: Optional[Any] = None
+    min_value: Optional[int] = None
+    max_value: Optional[int] = None
+    is_required: bool = False
+
+
+class QuestionGenerationRequest(BaseModel):
+    topic: str
+    max_questions: int = Field(default=3, ge=2, le=4)
+
+
+class QuestionGenerationResponse(BaseModel):
+    questions: List[FollowUpQuestion]
+    estimated_time_seconds: int
+
+
+class PromptRefinementRequest(BaseModel):
+    original_topic: str
+    questions: List[FollowUpQuestion]
+    answers: Dict[str, Any]
+
+
+class PromptRefinementResponse(BaseModel):
+    refined_prompt: str
+    context: Dict[str, Any]
 
 
 class VideoGenerationResponse(BaseModel):
@@ -381,7 +467,14 @@ async def generate_video_pipeline(
     quality: str,
     enable_subtitles: bool,
     celebrity: str = "drake",
+    renderer: str = "manim",
     resume_from_job: Optional[str] = None,
+    refined_context: Optional[Dict[str, Any]] = None,
+    celebrity_mode: str = "preset",
+    custom_photo_id: Optional[str] = None,
+    custom_audio_id: Optional[str] = None,
+    user_id: str = "default",
+    celebrities: Optional[List[Dict[str, Any]]] = None,
 ):
     """
     Main video generation pipeline with celebrity lip-sync.
@@ -392,11 +485,16 @@ async def generate_video_pipeline(
         duration_seconds: Target duration
         quality: Video quality setting
         enable_subtitles: Whether to add subtitles
-        celebrity: Celebrity for lip-synced video (drake, sydney_sweeney) - used as fallback
-                   Note: Celebrity is now automatically selected per segment based on speaker:
-                   - Male characters (Alex, Jamie, etc.) -> Drake
-                   - Female characters (Maya, Emma, etc.) -> Sydney Sweeney
+        celebrity: Celebrity for lip-synced video (LEGACY - used for backward compatibility)
+        renderer: Animation renderer (manim, remotion)
         resume_from_job: Optional job ID to resume from (skips cleanup and completed steps)
+        refined_context: Optional enhanced context from follow-up questions
+        celebrity_mode: LEGACY - 'preset' or 'custom' (for backward compatibility)
+        custom_photo_id: LEGACY - Photo ID for custom celebrity
+        custom_audio_id: LEGACY - Audio ID for custom voice
+        user_id: User ID for accessing custom media
+        celebrities: NEW - List of celebrity configurations (supports 2+ celebrities)
+                     Each dict: {mode, name, photo_id, audio_id, user_id}
     """
     try:
         # Wait for WebSocket connection before starting
@@ -448,6 +546,70 @@ async def generate_video_pipeline(
             completed_steps = {}
             resume_point = "script"
 
+        # Handle celebrity configuration (NEW: supports multiple celebrities)
+        # Priority 1: Use new celebrities list if provided
+        # Priority 2: Fall back to legacy single celebrity mode for backward compatibility
+        if celebrities is None or len(celebrities) == 0:
+            # BACKWARD COMPATIBILITY: Convert legacy single celebrity to new format
+            logger.info("Using legacy single celebrity mode, converting to new format")
+            if celebrity_mode == "custom" and custom_photo_id:
+                celebrities = [
+                    {
+                        "mode": "custom",
+                        "photo_id": custom_photo_id,
+                        "audio_id": custom_audio_id,
+                        "user_id": user_id
+                    }
+                ]
+            else:
+                # Default: Drake + Sydney Sweeney
+                celebrities = [
+                    {"mode": "preset", "name": "drake", "user_id": "default"},
+                    {"mode": "preset", "name": "sydney_sweeney", "user_id": "default"}
+                ]
+
+        logger.info(f"Using {len(celebrities)} celebrities for video generation")
+        for idx, celeb in enumerate(celebrities):
+            mode = celeb.get("mode", "preset")
+            if mode == "preset":
+                logger.info(f"  Celebrity {idx}: Preset '{celeb.get('name', 'unknown')}'")
+            else:
+                logger.info(f"  Celebrity {idx}: Custom (photo={celeb.get('photo_id')}, audio={celeb.get('audio_id')})")
+
+        # Build celebrity image and audio maps
+        celebrity_images_map = {}
+        celebrity_audio_map = {}
+
+        for celeb_idx, celeb_config in enumerate(celebrities):
+            celeb_key = f"celebrity_{celeb_idx}"
+
+            if celeb_config.get("mode") == "preset":
+                # Use preset celebrity
+                preset_name = celeb_config.get("name", "drake")
+                celebrity_images_map[celeb_key] = CELEBRITY_IMAGES.get(preset_name, CELEBRITY_IMAGES["drake"])
+                celebrity_audio_map[celeb_key] = CELEBRITY_AUDIO_SAMPLES.get(preset_name)
+                logger.info(f"Mapped {celeb_key} to preset '{preset_name}'")
+            else:
+                # Use custom upload
+                celeb_user_id = celeb_config.get("user_id", user_id)
+                photo_id = celeb_config.get("photo_id")
+                audio_id = celeb_config.get("audio_id")
+
+                if photo_id:
+                    custom_photo_path = media_storage.get_photo_path(celeb_user_id, photo_id)
+                    if custom_photo_path and custom_photo_path.exists():
+                        celebrity_images_map[celeb_key] = custom_photo_path
+                        logger.info(f"Mapped {celeb_key} to custom photo: {custom_photo_path}")
+                    else:
+                        logger.warning(f"Custom photo not found for {celeb_key}, using Drake as fallback")
+                        celebrity_images_map[celeb_key] = CELEBRITY_IMAGES["drake"]
+
+                    if audio_id:
+                        custom_audio_path = media_storage.get_audio_path(celeb_user_id, audio_id)
+                        if custom_audio_path and custom_audio_path.exists():
+                            celebrity_audio_map[celeb_key] = custom_audio_path
+                            logger.info(f"Mapped {celeb_key} to custom audio: {custom_audio_path}")
+
         # Initialize pipeline modules
         script_gen = ScriptGenerator(OPENAI_API_KEY)
         audio_gen = AudioGenerator(
@@ -461,6 +623,7 @@ async def generate_video_pipeline(
         storyboard_gen = StoryboardGenerator(OPENAI_API_KEY)  # NEW
         layout_engine = LayoutEngine()  # NEW
         manim_gen = ManimGenerator(OPENAI_API_KEY)
+        remotion_gen = RemotionGenerator(OPENAI_API_KEY)  # NEW - Alternative to Manim
 
         # Image-to-video with configurable model (defaults to seedance for cost savings)
         img_to_video_model = os.getenv("IMAGE_TO_VIDEO_MODEL")
@@ -472,11 +635,6 @@ async def generate_video_pipeline(
 
         video_stitcher = VideoStitcher()
 
-        # Get celebrity image
-        celebrity_image = CELEBRITY_IMAGES.get(celebrity, CELEBRITY_IMAGES["drake"])
-        if not celebrity_image.exists():
-            raise FileNotFoundError(f"Celebrity image not found: {celebrity_image}")
-
         # Step 1: Generate Script
         script_path = job_dir / "script.json"
         if completed_steps.get("script"):
@@ -486,17 +644,42 @@ async def generate_video_pipeline(
         else:
             await send_progress_update(job_id, "Generating script...", 5)
 
-            # Use celebrity names as speakers instead of "Teacher"/"Student"
-            # Drake and Sydney Sweeney have a conversation
-            speaker_names = {
-                "teacher": "Drake",
-                "student": "Sydney"
-            }
+            # Generate speaker names from celebrities
+            # For now, we support 2 speakers (teacher and student)
+            # Map first celebrity to teacher, second to student
+            if len(celebrities) >= 2:
+                # Get names from first 2 celebrities
+                teacher_celeb = celebrities[0]
+                student_celeb = celebrities[1]
+
+                # Determine speaker names
+                if teacher_celeb.get("mode") == "preset":
+                    teacher_name = teacher_celeb.get("name", "Drake").replace("_", " ").title()
+                else:
+                    teacher_name = "Speaker 1"
+
+                if student_celeb.get("mode") == "preset":
+                    student_name = student_celeb.get("name", "Sydney Sweeney").replace("_", " ").title()
+                else:
+                    student_name = "Speaker 2"
+
+                speaker_names = {
+                    "teacher": teacher_name,
+                    "student": student_name
+                }
+                logger.info(f"Generated speaker names: {speaker_names}")
+            else:
+                # Fallback for single celebrity (shouldn't happen, but just in case)
+                speaker_names = {
+                    "teacher": "Speaker 1",
+                    "student": "Speaker 2"
+                }
 
             script = await script_gen.generate_script(
                 topic=topic,
                 duration_seconds=duration_seconds,
                 speaker_names=speaker_names,
+                refined_context=refined_context,
                 progress_callback=lambda msg, prog: asyncio.create_task(
                     send_progress_update(job_id, msg, prog)
                 ),
@@ -505,6 +688,17 @@ async def generate_video_pipeline(
 
             # Save script
             script_path.write_text(json.dumps(script, indent=2), encoding="utf-8")
+
+        # Build speaker-to-celebrity mapping for audio generation
+        # Extract unique speakers from script and map them to celebrities
+        unique_speakers = list(dict.fromkeys(seg["speaker"] for seg in script))  # Preserve order
+        speaker_to_celebrity = {}
+
+        for speaker_idx, speaker_name in enumerate(unique_speakers):
+            celeb_idx = speaker_idx % len(celebrities)
+            celeb_key = f"celebrity_{celeb_idx}"
+            speaker_to_celebrity[speaker_name] = celeb_key
+            logger.info(f"Audio mapping: speaker '{speaker_name}' -> {celeb_key}")
 
         # Step 2: Generate Audio
         audio_dir = job_dir / "audio_segments"
@@ -531,6 +725,8 @@ async def generate_video_pipeline(
                 progress_callback=lambda msg, prog: asyncio.create_task(
                     send_progress_update(job_id, msg, prog)
                 ),
+                speaker_celebrity_map=speaker_to_celebrity,
+                celebrity_audio_samples=celebrity_audio_map,
             )
             logger.info(f"Audio generated: {final_audio_path}")
 
@@ -607,102 +803,173 @@ async def generate_video_pipeline(
             )
             visual_instructions = None  # Not using legacy system
 
-        # Step 5: Generate Manim Code (using LayoutEngine if storyboard available)
-        manim_file = job_dir / "animation.py"
+        # Step 5: Generate Animation Code (Manim or Remotion)
         audio_duration = timestamp_data.get('duration', 60.0)
-        if completed_steps.get("manim_code"):
-            logger.info("⏩ Skipping Manim code generation (already completed)")
-            await send_progress_update(job_id, "Manim code loaded from cache", 50)
-        else:
-            await send_progress_update(job_id, "Generating Manim code...", 48)
+        animation_video = None  # Will hold the final 9:8 video from either renderer
 
-            if storyboard is not None:
-                # NEW: Use LayoutEngine with storyboard
-                logger.info("Using LayoutEngine with storyboard for Manim code generation")
-                await send_progress_update(job_id, "Converting storyboard to Manim code with spatial layout...", 49)
+        if renderer == "remotion":
+            # ===== REMOTION FLOW =====
+            remotion_project_dir = job_dir / "remotion_project"
 
-                # Convert storyboard scenes to visual_instructions format for ManimGenerator
-                # (This maintains compatibility with existing ManimGenerator)
-                visual_instructions = storyboard.get('scenes', [])
+            if completed_steps.get("remotion_code"):
+                logger.info("⏩ Skipping Remotion code generation (already completed)")
+                await send_progress_update(job_id, "Remotion code loaded from cache", 50)
+            else:
+                await send_progress_update(job_id, "Generating Remotion code...", 48)
 
-                # Generate Manim code using ManimGenerator (it handles the storyboard format)
-                await manim_gen.generate_manim_code(
+                if storyboard is not None:
+                    logger.info("Using storyboard for Remotion code generation")
+                    await send_progress_update(job_id, "Converting storyboard to Remotion code...", 49)
+                    visual_instructions = storyboard.get('scenes', [])
+                else:
+                    logger.info("Using legacy visual instructions for Remotion code generation")
+
+                # Generate Remotion code
+                await remotion_gen.generate_remotion_code(
                     visual_instructions=visual_instructions,
                     topic=topic,
-                    output_path=manim_file,
+                    output_dir=remotion_project_dir,
                     target_duration=audio_duration,
                     progress_callback=lambda msg, prog: asyncio.create_task(
                         send_progress_update(job_id, msg, prog)
                     ),
+                    script=script,
                 )
-            else:
-                # Legacy: Use visual_instructions directly
-                logger.info("Using legacy visual instructions for Manim code generation")
-                await manim_gen.generate_manim_code(
-                    visual_instructions=visual_instructions,
-                    topic=topic,
-                    output_path=manim_file,
-                    target_duration=audio_duration,
-                    progress_callback=lambda msg, prog: asyncio.create_task(
-                        send_progress_update(job_id, msg, prog)
-                    ),
-                )
+                logger.info(f"Remotion code generated: {remotion_project_dir}")
 
-            logger.info(f"Manim code generated: {manim_file}")
+            # Step 6: Render Remotion Video (TOP HALF - 9:8 format)
+            remotion_output_path = job_dir / "remotion_output.mp4"
 
-        # Step 6: Render Manim Video (TOP HALF - 9:16 format)
-        manim_output_dir = job_dir / "manim_output"
-        manim_video = None
+            if completed_steps.get("remotion_render"):
+                logger.info("⏩ Skipping Remotion render (already completed)")
+                if remotion_output_path.exists():
+                    animation_video = remotion_output_path
+                    logger.info(f"Using existing Remotion video: {animation_video}")
+                    await send_progress_update(job_id, "Remotion video loaded from cache", 58)
+                else:
+                    logger.warning("Remotion render marked complete but video not found, re-rendering...")
+                    completed_steps["remotion_render"] = False
 
-        if completed_steps.get("manim_render"):
-            logger.info("⏩ Skipping Manim render (already completed)")
-            # Find existing rendered video
-            manim_videos = list(manim_output_dir.rglob("manim_output.mp4"))
-            if manim_videos:
-                manim_video = manim_videos[0]
-                logger.info(f"Using existing Manim video: {manim_video}")
-                await send_progress_update(job_id, "Manim video loaded from cache", 58)
-            else:
-                logger.warning("Manim render marked complete but video not found, re-rendering...")
-                completed_steps["manim_render"] = False
-
-        # Wrap in retry loop in case full render fails with errors test render missed
-        if not completed_steps.get("manim_render"):
-            for render_attempt in range(3):  # Up to 3 render attempts
-                try:
-                    await send_progress_update(job_id, f"Rendering Manim animation (attempt {render_attempt + 1}/3)...", 55)
-                    manim_video = await manim_gen.render_manim_video(
-                        manim_file=manim_file,
-                        output_dir=manim_output_dir,
-                        quality=quality,
-                        aspect_ratio="9:8",  # 9:8 aspect ratio for top half (will be stacked with 9:8 bottom to make 9:16)
-                        progress_callback=lambda msg, prog: asyncio.create_task(
-                            send_progress_update(job_id, msg, prog)
-                        ),
-                    )
-                    logger.info(f"Manim video rendered: {manim_video}")
-                    break  # Success! Exit retry loop
-                except Exception as render_error:
-                    logger.warning(f"Manim render attempt {render_attempt + 1} failed: {render_error}")
-                    if render_attempt < 2:  # Not last attempt
-                        # Regenerate code with the render error
-                        await send_progress_update(job_id, f"Render failed, regenerating code...", 52)
-                        manim_file = await manim_gen.generate_manim_code(
-                            visual_instructions=visual_instructions,
-                            topic=topic,
-                            output_path=manim_file,
-                            target_duration=audio_duration,
+            if not completed_steps.get("remotion_render"):
+                for render_attempt in range(3):
+                    try:
+                        await send_progress_update(job_id, f"Rendering Remotion animation (attempt {render_attempt + 1}/3)...", 55)
+                        animation_video = await remotion_gen.render_remotion_video(
+                            project_dir=remotion_project_dir,
+                            output_path=remotion_output_path,
+                            composition_id="EducationalScene",
                             progress_callback=lambda msg, prog: asyncio.create_task(
                                 send_progress_update(job_id, msg, prog)
                             ),
                         )
-                        logger.info(f"Manim code regenerated after render failure")
-                    else:
-                        # Last attempt failed, raise error
-                        raise
+                        logger.info(f"Remotion video rendered: {animation_video}")
+                        break
+                    except Exception as render_error:
+                        logger.warning(f"Remotion render attempt {render_attempt + 1} failed: {render_error}")
+                        if render_attempt < 2:
+                            await send_progress_update(job_id, f"Render failed, regenerating code...", 52)
+                            await remotion_gen.generate_remotion_code(
+                                visual_instructions=visual_instructions,
+                                topic=topic,
+                                output_dir=remotion_project_dir,
+                                target_duration=audio_duration,
+                                progress_callback=lambda msg, prog: asyncio.create_task(
+                                    send_progress_update(job_id, msg, prog)
+                                ),
+                            )
+                            logger.info(f"Remotion code regenerated after render failure")
+                        else:
+                            raise
 
-        if not manim_video:
-            raise Exception("Failed to render Manim video after 3 attempts")
+            if not animation_video:
+                raise Exception("Failed to render Remotion video after 3 attempts")
+
+        else:
+            # ===== MANIM FLOW (DEFAULT) =====
+            manim_file = job_dir / "animation.py"
+
+            if completed_steps.get("manim_code"):
+                logger.info("⏩ Skipping Manim code generation (already completed)")
+                await send_progress_update(job_id, "Manim code loaded from cache", 50)
+            else:
+                await send_progress_update(job_id, "Generating Manim code...", 48)
+
+                if storyboard is not None:
+                    logger.info("Using LayoutEngine with storyboard for Manim code generation")
+                    await send_progress_update(job_id, "Converting storyboard to Manim code with spatial layout...", 49)
+                    visual_instructions = storyboard.get('scenes', [])
+
+                    await manim_gen.generate_manim_code(
+                        visual_instructions=visual_instructions,
+                        topic=topic,
+                        output_path=manim_file,
+                        target_duration=audio_duration,
+                        progress_callback=lambda msg, prog: asyncio.create_task(
+                            send_progress_update(job_id, msg, prog)
+                        ),
+                    )
+                else:
+                    logger.info("Using legacy visual instructions for Manim code generation")
+                    await manim_gen.generate_manim_code(
+                        visual_instructions=visual_instructions,
+                        topic=topic,
+                        output_path=manim_file,
+                        target_duration=audio_duration,
+                        progress_callback=lambda msg, prog: asyncio.create_task(
+                            send_progress_update(job_id, msg, prog)
+                        ),
+                    )
+
+                logger.info(f"Manim code generated: {manim_file}")
+
+            # Step 6: Render Manim Video (TOP HALF - 9:8 format)
+            manim_output_dir = job_dir / "manim_output"
+
+            if completed_steps.get("manim_render"):
+                logger.info("⏩ Skipping Manim render (already completed)")
+                manim_videos = list(manim_output_dir.rglob("manim_output.mp4"))
+                if manim_videos:
+                    animation_video = manim_videos[0]
+                    logger.info(f"Using existing Manim video: {animation_video}")
+                    await send_progress_update(job_id, "Manim video loaded from cache", 58)
+                else:
+                    logger.warning("Manim render marked complete but video not found, re-rendering...")
+                    completed_steps["manim_render"] = False
+
+            if not completed_steps.get("manim_render"):
+                for render_attempt in range(3):
+                    try:
+                        await send_progress_update(job_id, f"Rendering Manim animation (attempt {render_attempt + 1}/3)...", 55)
+                        animation_video = await manim_gen.render_manim_video(
+                            manim_file=manim_file,
+                            output_dir=manim_output_dir,
+                            quality=quality,
+                            aspect_ratio="9:8",
+                            progress_callback=lambda msg, prog: asyncio.create_task(
+                                send_progress_update(job_id, msg, prog)
+                            ),
+                        )
+                        logger.info(f"Manim video rendered: {animation_video}")
+                        break
+                    except Exception as render_error:
+                        logger.warning(f"Manim render attempt {render_attempt + 1} failed: {render_error}")
+                        if render_attempt < 2:
+                            await send_progress_update(job_id, f"Render failed, regenerating code...", 52)
+                            manim_file = await manim_gen.generate_manim_code(
+                                visual_instructions=visual_instructions,
+                                topic=topic,
+                                output_path=manim_file,
+                                target_duration=audio_duration,
+                                progress_callback=lambda msg, prog: asyncio.create_task(
+                                    send_progress_update(job_id, msg, prog)
+                                ),
+                            )
+                            logger.info(f"Manim code regenerated after render failure")
+                        else:
+                            raise
+
+            if not animation_video:
+                raise Exception("Failed to render Manim video after 3 attempts")
 
         # Step 7: Generate Celebrity Videos from Image (BOTTOM HALF) - PER SEGMENT
         # Get individual audio segment files
@@ -726,157 +993,249 @@ async def generate_video_pipeline(
             logger.info(f"Using {len(celebrity_video_segments)} existing celebrity videos")
             await send_progress_update(job_id, "Celebrity videos loaded from cache", 70)
         else:
-            await send_progress_update(job_id, "Generating celebrity videos per segment...", 60)
+            await send_progress_update(job_id, "Generating celebrity videos per segment in parallel...", 60)
 
-            # Generate celebrity video for each segment
-            celebrity_video_segments = []
+            # speaker_to_celebrity mapping already built earlier (before audio generation)
+            # We reuse it here for celebrity video generation
 
+            # Helper function for generating and trimming a single celebrity video segment
+            # This enables parallelization via asyncio.gather()
+            async def generate_and_trim_celebrity_video(idx: int, audio_segment_path: Path) -> Path:
+                """
+                Generate and trim a celebrity video segment for parallel execution.
+
+                Args:
+                    idx: Segment index
+                    audio_segment_path: Path to audio segment file
+
+                Returns:
+                    Path to trimmed celebrity video segment
+                """
+                try:
+                    # Update progress (async, non-blocking)
+                    segment_progress = int(60 + (idx / total_segments) * 15)
+                    await send_progress_update(
+                        job_id,
+                        f"Generating celebrity video {idx + 1}/{total_segments}...",
+                        segment_progress
+                    )
+
+                    # Get duration of this audio segment using ffprobe
+                    segment_duration = await video_stitcher._get_duration(audio_segment_path)
+                    logger.info(f"Segment {idx}: {segment_duration:.4f}s")
+
+                    # Generate celebrity video for this segment
+                    celebrity_segment_path = celebrity_video_dir / f"segment_{idx:03d}.mp4"
+
+                    # Get speaker from script.json (loaded earlier) instead of parsing filename
+                    # This is the correct way since filenames may have spaces and complex speaker names
+                    speaker = script[idx]["speaker"]
+                    logger.info(f"Segment {idx}: Speaker from script = '{speaker}'")
+
+                    # Map speaker to celebrity using the speaker_to_celebrity mapping
+                    celeb_key = speaker_to_celebrity.get(speaker, "celebrity_0")
+                    segment_celebrity_image = celebrity_images_map.get(celeb_key, CELEBRITY_IMAGES["drake"])
+                    logger.info(f"Segment {idx}: Mapped speaker '{speaker}' -> {celeb_key} -> {segment_celebrity_image}")
+
+                    # Use varied prompts for natural variety
+                    prompts = [
+                        "natural talking expression, engaging eye contact, friendly smile, slight head nod",
+                        "expressive speaking, warm expression, subtle gestures, natural movement",
+                        "animated talking, enthusiastic expression, gentle head tilt, engaging presence",
+                        "conversational speaking, genuine smile, soft eye contact, relaxed posture",
+                        "energetic narration, dynamic expression, natural hand gestures, confident delivery",
+                    ]
+                    prompt = prompts[idx % len(prompts)]
+
+                    await img_to_video_gen.generate_video_from_image(
+                        image_path=segment_celebrity_image,
+                        duration=segment_duration,
+                        prompt=prompt,
+                        output_path=celebrity_segment_path,
+                        aspect_ratio="9:16",
+                    )
+
+                    # CRITICAL: Trim video to EXACT audio duration to prevent sync drift
+                    # The image-to-video models (Seedance/Kling) don't generate exact durations
+                    trimmed_segment_path = celebrity_video_dir / f"segment_{idx:03d}_trimmed.mp4"
+                    logger.info(f"Trimming celebrity video {idx} to exact duration: {segment_duration:.4f}s")
+
+                    await video_stitcher.trim_video_to_duration(
+                        video_path=celebrity_segment_path,
+                        duration=segment_duration,
+                        output_path=trimmed_segment_path,
+                    )
+
+                    # Verify trimmed video duration
+                    trimmed_duration = await video_stitcher._get_duration(trimmed_segment_path)
+                    logger.info(f"Trimmed video {idx} duration: {trimmed_duration:.4f}s (target: {segment_duration:.4f}s, diff: {abs(trimmed_duration - segment_duration):.4f}s)")
+
+                    logger.info(f"Celebrity video segment {idx} trimmed and ready: {trimmed_segment_path}")
+                    return trimmed_segment_path
+
+                except Exception as e:
+                    logger.error(f"Failed to generate celebrity video for segment {idx}: {e}")
+                    raise
+
+            # Create tasks for all segments (parallelization pattern from audio_generator.py)
+            celebrity_video_tasks = []
             for idx, audio_segment_path in enumerate(audio_segment_files):
-                segment_progress = int(60 + (idx / total_segments) * 15)
-                await send_progress_update(
-                    job_id,
-                    f"Generating celebrity video {idx + 1}/{total_segments}...",
-                    segment_progress
+                task = generate_and_trim_celebrity_video(idx, audio_segment_path)
+                celebrity_video_tasks.append(task)
+
+            # Execute all celebrity video generation tasks in parallel with rate limiting
+            # Max 5-8 concurrent Replicate API calls to avoid rate limits
+            MAX_CONCURRENT_REPLICATE_CALLS = 6
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT_REPLICATE_CALLS)
+
+            async def with_rate_limit(task):
+                """Wrap task with semaphore for rate limiting."""
+                async with semaphore:
+                    return await task
+
+            logger.info(f"Starting parallel celebrity video generation for {len(celebrity_video_tasks)} segments (max {MAX_CONCURRENT_REPLICATE_CALLS} concurrent)")
+
+            try:
+                # Use return_exceptions=True to handle errors gracefully
+                celebrity_video_segments = await asyncio.gather(
+                    *[with_rate_limit(task) for task in celebrity_video_tasks],
+                    return_exceptions=True
                 )
 
-                # Get duration of this audio segment using ffprobe
-                segment_duration = await video_stitcher._get_duration(audio_segment_path)
-                logger.info(f"Segment {idx}: {segment_duration:.4f}s")
+                # Check for any errors and re-raise the first one
+                for idx, result in enumerate(celebrity_video_segments):
+                    if isinstance(result, Exception):
+                        logger.error(f"Segment {idx} failed: {result}")
+                        raise result
 
-                # Generate celebrity video for this segment
-                celebrity_segment_path = celebrity_video_dir / f"segment_{idx:03d}.mp4"
+                logger.info(f"Successfully generated {len(celebrity_video_segments)} celebrity videos in parallel")
 
-                # Get speaker from script.json (loaded earlier) instead of parsing filename
-                # This is the correct way since filenames may have spaces and complex speaker names
-                speaker = script[idx]["speaker"]
-                logger.info(f"Segment {idx}: Speaker from script = '{speaker}'")
-
-                # Map speaker to celebrity
-                # Priority 1: Direct name matching (if speaker is "Drake" or "Sydney")
-                speaker_lower = speaker.lower()
-                if "drake" in speaker_lower:
-                    segment_celebrity_image = CELEBRITY_IMAGES["drake"]
-                    logger.info(f"Segment {idx}: Using Drake (matched speaker name '{speaker}')")
-                elif "sydney" in speaker_lower:
-                    segment_celebrity_image = CELEBRITY_IMAGES["sydney_sweeney"]
-                    logger.info(f"Segment {idx}: Using Sydney Sweeney (matched speaker name '{speaker}')")
-                else:
-                    # Priority 2: Map based on assigned voice (backward compatibility)
-                    # Check the voice assigned to this speaker in audio_gen.speaker_voice_map
-                    assigned_voice = audio_gen.speaker_voice_map.get(speaker, "unknown")
-                    logger.info(f"Segment {idx}: Speaker '{speaker}' has voice '{assigned_voice}'")
-
-                    # Map voices to celebrities:
-                    # - Male voices (onyx, echo, fable) -> Drake
-                    # - Female voices (nova, shimmer, alloy) -> Sydney Sweeney
-                    male_voices = ["onyx", "echo", "fable"]
-                    female_voices = ["nova", "shimmer", "alloy"]
-
-                    if assigned_voice in male_voices:
-                        segment_celebrity_image = CELEBRITY_IMAGES["drake"]
-                        logger.info(f"Segment {idx}: Using Drake for {speaker} (voice: {assigned_voice})")
-                    elif assigned_voice in female_voices:
-                        segment_celebrity_image = CELEBRITY_IMAGES["sydney_sweeney"]
-                        logger.info(f"Segment {idx}: Using Sydney Sweeney for {speaker} (voice: {assigned_voice})")
-                    else:
-                        # Fallback: alternate based on segment index (even = Drake, odd = Sydney)
-                        # This works well for multi-person conversations when voice is unknown
-                        if idx % 2 == 0:
-                            segment_celebrity_image = CELEBRITY_IMAGES["drake"]
-                            logger.info(f"Segment {idx}: Using Drake for {speaker} (fallback: even index)")
-                        else:
-                            segment_celebrity_image = CELEBRITY_IMAGES["sydney_sweeney"]
-                            logger.info(f"Segment {idx}: Using Sydney Sweeney for {speaker} (fallback: odd index)")
-
-                # Use varied prompts for natural variety
-                prompts = [
-                    "natural talking expression, engaging eye contact, friendly smile, slight head nod",
-                    "expressive speaking, warm expression, subtle gestures, natural movement",
-                    "animated talking, enthusiastic expression, gentle head tilt, engaging presence",
-                    "conversational speaking, genuine smile, soft eye contact, relaxed posture",
-                    "energetic narration, dynamic expression, natural hand gestures, confident delivery",
-                ]
-                prompt = prompts[idx % len(prompts)]
-
-                await img_to_video_gen.generate_video_from_image(
-                    image_path=segment_celebrity_image,
-                    duration=segment_duration,
-                    prompt=prompt,
-                    output_path=celebrity_segment_path,
-                    aspect_ratio="9:16",
-                )
-
-                # CRITICAL: Trim video to EXACT audio duration to prevent sync drift
-                # The image-to-video models (Seedance/Kling) don't generate exact durations
-                trimmed_segment_path = celebrity_video_dir / f"segment_{idx:03d}_trimmed.mp4"
-                logger.info(f"Trimming celebrity video {idx} to exact duration: {segment_duration:.4f}s")
-
-                await video_stitcher.trim_video_to_duration(
-                    video_path=celebrity_segment_path,
-                    duration=segment_duration,
-                    output_path=trimmed_segment_path,
-                )
-
-                # Verify trimmed video duration
-                trimmed_duration = await video_stitcher._get_duration(trimmed_segment_path)
-                logger.info(f"Trimmed video {idx} duration: {trimmed_duration:.4f}s (target: {segment_duration:.4f}s, diff: {abs(trimmed_duration - segment_duration):.4f}s)")
-
-                celebrity_video_segments.append(trimmed_segment_path)
-                logger.info(f"Celebrity video segment {idx} trimmed and ready: {trimmed_segment_path}")
+            except Exception as e:
+                logger.error(f"Error during parallel celebrity video generation: {e}")
+                raise
 
         # Step 8: Lip-sync Each Celebrity Video Segment with Its Audio
         lipsynced_video_dir = job_dir / "lipsynced_videos"
         lipsynced_video_dir.mkdir(parents=True, exist_ok=True)
+
+        # Check if final concatenated video exists (for resume validation)
+        lipsynced_video = job_dir / "celebrity_lipsynced_full.mp4"
+        need_concatenation = False
 
         if completed_steps.get("lipsynced_videos"):
             logger.info("⏩ Skipping lip-sync (already completed)")
             # Load existing lip-synced videos
             lipsynced_segments = sorted(list(lipsynced_video_dir.glob("lipsynced_*.mp4")))
             logger.info(f"Using {len(lipsynced_segments)} existing lip-synced videos")
+
+            # Check if concatenated video exists
+            if not lipsynced_video.exists():
+                logger.warning("⚠️  Concatenated video missing, will re-concatenate segments")
+                need_concatenation = True
+            else:
+                logger.info(f"✅ Concatenated video exists: {lipsynced_video}")
+
             await send_progress_update(job_id, "Lip-synced videos loaded from cache", 85)
         else:
-            await send_progress_update(job_id, "Lip-syncing video segments with audio...", 75)
+            await send_progress_update(job_id, "Lip-syncing video segments with audio in parallel...", 75)
 
-            lipsynced_segments = []
+            # Helper function for lip-syncing and trimming a single segment
+            # This enables parallelization via asyncio.gather()
+            async def lipsync_and_trim_segment(idx: int, video_segment: Path, audio_segment: Path) -> Path:
+                """
+                Lip-sync and trim a video segment for parallel execution.
 
+                Args:
+                    idx: Segment index
+                    video_segment: Path to celebrity video segment
+                    audio_segment: Path to audio segment file
+
+                Returns:
+                    Path to trimmed lip-synced video segment
+                """
+                try:
+                    # Update progress (async, non-blocking)
+                    segment_progress = int(75 + (idx / total_segments) * 15)
+                    await send_progress_update(
+                        job_id,
+                        f"Lip-syncing segment {idx + 1}/{total_segments}...",
+                        segment_progress
+                    )
+
+                    # Lip-sync this segment
+                    lipsynced_segment_path = lipsynced_video_dir / f"lipsynced_{idx:03d}.mp4"
+
+                    await lipsync_gen.sync_audio_to_video(
+                        video_path=video_segment,
+                        audio_path=audio_segment,
+                        output_path=lipsynced_segment_path,
+                    )
+
+                    # Verify lip-synced video duration matches audio
+                    lipsynced_duration = await video_stitcher._get_duration(lipsynced_segment_path)
+                    audio_duration_check = await video_stitcher._get_duration(audio_segment)
+                    logger.info(f"Lip-synced segment {idx} duration: {lipsynced_duration:.4f}s (audio: {audio_duration_check:.4f}s)")
+
+                    # ALWAYS trim to match audio exactly (NO TOLERANCE)
+                    # Even tiny differences accumulate over many segments causing drift
+                    logger.info(f"Trimming lip-synced segment {idx} to EXACT audio duration (difference: {abs(lipsynced_duration - audio_duration_check):.4f}s)")
+                    trimmed_lipsynced_path = lipsynced_video_dir / f"lipsynced_{idx:03d}_trimmed.mp4"
+                    await video_stitcher.trim_video_to_duration(
+                        video_path=lipsynced_segment_path,
+                        duration=audio_duration_check,
+                        output_path=trimmed_lipsynced_path,
+                    )
+                    logger.info(f"Lip-synced segment {idx} trimmed to exact audio duration: {trimmed_lipsynced_path}")
+                    return trimmed_lipsynced_path
+
+                except Exception as e:
+                    logger.error(f"Failed to lip-sync segment {idx}: {e}")
+                    raise
+
+            # Create tasks for all segments (parallelization pattern from audio_generator.py)
+            lipsync_tasks = []
             for idx, (video_segment, audio_segment) in enumerate(zip(celebrity_video_segments, audio_segment_files)):
-                segment_progress = int(75 + (idx / total_segments) * 15)
-                await send_progress_update(
-                    job_id,
-                    f"Lip-syncing segment {idx + 1}/{total_segments}...",
-                    segment_progress
+                task = lipsync_and_trim_segment(idx, video_segment, audio_segment)
+                lipsync_tasks.append(task)
+
+            # Execute all lip-sync tasks in parallel with rate limiting
+            # Max 5-8 concurrent Replicate API calls to avoid rate limits
+            MAX_CONCURRENT_LIPSYNC_CALLS = 6
+            lipsync_semaphore = asyncio.Semaphore(MAX_CONCURRENT_LIPSYNC_CALLS)
+
+            async def with_lipsync_rate_limit(task):
+                """Wrap task with semaphore for rate limiting."""
+                async with lipsync_semaphore:
+                    return await task
+
+            logger.info(f"Starting parallel lip-sync for {len(lipsync_tasks)} segments (max {MAX_CONCURRENT_LIPSYNC_CALLS} concurrent)")
+
+            try:
+                # Use return_exceptions=True to handle errors gracefully
+                lipsynced_segments = await asyncio.gather(
+                    *[with_lipsync_rate_limit(task) for task in lipsync_tasks],
+                    return_exceptions=True
                 )
 
-                # Lip-sync this segment
-                lipsynced_segment_path = lipsynced_video_dir / f"lipsynced_{idx:03d}.mp4"
+                # Check for any errors and re-raise the first one
+                for idx, result in enumerate(lipsynced_segments):
+                    if isinstance(result, Exception):
+                        logger.error(f"Lip-sync segment {idx} failed: {result}")
+                        raise result
 
-                await lipsync_gen.sync_audio_to_video(
-                    video_path=video_segment,
-                    audio_path=audio_segment,
-                    output_path=lipsynced_segment_path,
-                )
+                logger.info(f"Successfully lip-synced {len(lipsynced_segments)} segments in parallel")
 
-                # Verify lip-synced video duration matches audio
-                lipsynced_duration = await video_stitcher._get_duration(lipsynced_segment_path)
-                audio_duration_check = await video_stitcher._get_duration(audio_segment)
-                logger.info(f"Lip-synced segment {idx} duration: {lipsynced_duration:.4f}s (audio: {audio_duration_check:.4f}s)")
+            except Exception as e:
+                logger.error(f"Error during parallel lip-sync generation: {e}")
+                raise
 
-                # ALWAYS trim to match audio exactly (NO TOLERANCE)
-                # Even tiny differences accumulate over many segments causing drift
-                logger.info(f"Trimming lip-synced segment {idx} to EXACT audio duration (difference: {abs(lipsynced_duration - audio_duration_check):.4f}s)")
-                trimmed_lipsynced_path = lipsynced_video_dir / f"lipsynced_{idx:03d}_trimmed.mp4"
-                await video_stitcher.trim_video_to_duration(
-                    video_path=lipsynced_segment_path,
-                    duration=audio_duration_check,
-                    output_path=trimmed_lipsynced_path,
-                )
-                lipsynced_segments.append(trimmed_lipsynced_path)
-                logger.info(f"Lip-synced segment {idx} trimmed to exact audio duration: {trimmed_lipsynced_path}")
+            # Mark that we need to concatenate (just generated segments)
+            need_concatenation = True
 
-            # Step 8b: Concatenate all lip-synced segments into one video
+        # Step 8b: Concatenate all lip-synced segments into one video
+        # Run if: (1) just generated segments OR (2) segments exist but full video missing
+        if need_concatenation:
             await send_progress_update(job_id, "Concatenating lip-synced segments...", 88)
-
-            lipsynced_video = job_dir / "celebrity_lipsynced_full.mp4"
 
             # Calculate expected total duration from audio segments
             expected_duration = 0.0
@@ -902,9 +1261,8 @@ async def generate_video_pipeline(
                 logger.warning(f"DURATION MISMATCH: Concatenated video differs from expected by {duration_diff:.4f}s")
 
             logger.info(f"All lip-synced segments concatenated: {lipsynced_video}")
-
-        # Load concatenated video if it exists (for resume case)
-        lipsynced_video = job_dir / "celebrity_lipsynced_full.mp4"
+        else:
+            logger.info("✅ Using existing concatenated lip-synced video")
 
         # Step 9: Composite Top (Manim) and Bottom (Celebrity) into 9:16 Video
         composite_video = job_dir / "composite_video.mp4"
@@ -916,50 +1274,78 @@ async def generate_video_pipeline(
             # CRITICAL: Verify all input durations BEFORE compositing to catch sync issues
             await send_progress_update(job_id, "Verifying video durations before compositing...", 89)
 
-            manim_duration = await video_stitcher._get_duration(manim_video)
+            animation_duration = await video_stitcher._get_duration(animation_video)
             lipsynced_duration = await video_stitcher._get_duration(lipsynced_video)
-            audio_duration_final = await video_stitcher._get_duration(final_audio_path)
 
             logger.info(f"PRE-COMPOSITE DURATION CHECK:")
-            logger.info(f"  Manim video: {manim_duration:.4f}s")
-            logger.info(f"  Lipsynced video: {lipsynced_duration:.4f}s")
-            logger.info(f"  Audio: {audio_duration_final:.4f}s")
+            logger.info(f"  Animation video ({renderer}): {animation_duration:.4f}s")
+            logger.info(f"  Lipsynced video (with audio baked in): {lipsynced_duration:.4f}s")
+            logger.info(f"  NOTE: Using audio from lipsynced video, NOT re-adding full_audio.mp3")
 
             # Check for duration mismatches (tolerance of 0.1s)
-            duration_issues = []
-            if abs(manim_duration - audio_duration_final) > 0.1:
-                duration_issues.append(f"Manim video is {abs(manim_duration - audio_duration_final):.2f}s off from audio")
-            if abs(lipsynced_duration - audio_duration_final) > 0.1:
-                duration_issues.append(f"Lipsynced video is {abs(lipsynced_duration - audio_duration_final):.2f}s off from audio")
-
-            if duration_issues:
-                logger.warning(f"DURATION MISMATCHES DETECTED: {', '.join(duration_issues)}")
-                logger.warning("These will cause audio/video sync issues in the final output")
+            # Animation should match lipsynced video duration
+            if abs(animation_duration - lipsynced_duration) > 0.1:
+                logger.warning(f"Animation video is {abs(animation_duration - lipsynced_duration):.2f}s off from lipsynced video")
+                logger.warning("Animation will be trimmed to match lipsynced video duration")
             else:
-                logger.info("All input durations match - compositing should maintain sync")
+                logger.info("Animation and lipsynced video durations match - compositing should maintain sync")
 
             await send_progress_update(job_id, "Compositing educational and celebrity videos...", 90)
 
             await video_stitcher.composite_top_bottom_videos(
-                top_video_path=manim_video,
+                top_video_path=animation_video,
                 bottom_video_path=lipsynced_video,
-                audio_path=final_audio_path,
+                audio_path=None,  # Not used - audio comes from bottom video
                 output_path=composite_video,
                 progress_callback=lambda msg, prog: asyncio.create_task(
                     send_progress_update(job_id, msg, int(90 + prog * 0.05))
                 ),
             )
 
-            # Verify composite duration matches audio
+            # Verify composite duration matches lipsynced video (which has the audio)
             composite_duration = await video_stitcher._get_duration(composite_video)
-            composite_diff = abs(composite_duration - audio_duration_final)
-            logger.info(f"Composite video duration: {composite_duration:.4f}s (audio: {audio_duration_final:.4f}s, diff: {composite_diff:.4f}s)")
+            composite_diff = abs(composite_duration - lipsynced_duration)
+            logger.info(f"Composite video duration: {composite_duration:.4f}s (lipsynced video: {lipsynced_duration:.4f}s, diff: {composite_diff:.4f}s)")
 
             if composite_diff > 0.1:
                 logger.error(f"CRITICAL: Composite video duration mismatch! Off by {composite_diff:.2f}s")
                 logger.error("This will cause audio/video sync issues in the final video")
+            else:
+                logger.info(f"SUCCESS: Final video duration matches celebrity_lipsynced_full.mp4 exactly!")
 
             logger.info(f"Composite video created: {composite_video}")
+
+        # Step 9b: Re-extract Timestamps from Lip-Synced Audio (CRITICAL FOR SUBTITLE SYNC)
+        # The lip-sync process modifies audio timing, so we need to re-extract timestamps
+        # from the final lip-synced audio to ensure subtitles align perfectly
+        if enable_subtitles:
+            await send_progress_update(job_id, "Re-extracting timestamps from lip-synced audio for subtitle sync...", 93)
+
+            # Extract audio from the lip-synced video (which has the ACTUAL timing we need)
+            lipsynced_audio_path = job_dir / "lipsynced_audio.mp3"
+
+            logger.info(f"Extracting audio from lip-synced video for accurate subtitle timing...")
+            await video_stitcher.extract_audio(
+                video_path=lipsynced_video,
+                output_path=lipsynced_audio_path,
+            )
+
+            # Re-extract timestamps from the lip-synced audio (overwrite old srt_path)
+            final_srt_path = job_dir / "subtitles_final.srt"
+            logger.info(f"Re-extracting timestamps from lip-synced audio: {lipsynced_audio_path}")
+
+            final_timestamp_data = await timestamp_ext.extract_timestamps(
+                audio_path=lipsynced_audio_path,
+                output_srt_path=final_srt_path,
+                progress_callback=lambda msg, prog: asyncio.create_task(
+                    send_progress_update(job_id, msg, int(93 + prog * 0.02))
+                ),
+            )
+            logger.info(f"Final timestamps extracted from lip-synced audio: {len(final_timestamp_data['segments'])} segments")
+            logger.info(f"✅ Subtitles will now be perfectly synced with lip-synced video!")
+
+            # Use the new SRT file for subtitles
+            srt_path = final_srt_path
 
         # Step 10: Add Subtitles (if enabled)
         final_video = job_dir / "final_video.mp4"
@@ -1070,7 +1456,14 @@ async def generate_video(
             quality=request.quality,
             enable_subtitles=request.enable_subtitles,
             celebrity=request.celebrity,
+            renderer=request.renderer,
             resume_from_job=request.resume_job_id,
+            refined_context=request.refined_context,
+            celebrity_mode=request.celebrity_mode,
+            custom_photo_id=request.custom_photo_id,
+            custom_audio_id=request.custom_audio_id,
+            user_id=request.user_id,
+            celebrities=request.celebrities,
         )
 
         logger.info(f"Video generation job created: {job_id}")
@@ -1133,6 +1526,331 @@ async def get_video(job_id: str, filename: str):
         media_type="video/mp4",
         filename=f"{job_id}_{filename}",
     )
+
+
+@app.post("/api/generate-questions", response_model=QuestionGenerationResponse)
+async def generate_follow_up_questions(request: QuestionGenerationRequest):
+    """Generate 2-4 follow-up questions (<2s latency)."""
+    try:
+        from pipeline.followup_generator import FollowUpQuestionGenerator
+        generator = FollowUpQuestionGenerator(OPENAI_API_KEY)
+        questions = await generator.generate_questions(
+            topic=request.topic,
+            max_questions=request.max_questions,
+            time_budget_seconds=2.0
+        )
+
+        # Convert to Pydantic models
+        pydantic_questions = []
+        for q in questions:
+            pydantic_questions.append(FollowUpQuestion(
+                id=q.id,
+                question_text=q.question_text,
+                question_type=QuestionType(q.question_type),
+                category=q.category,
+                options=q.options,
+                default_value=q.default_value,
+                min_value=q.min_value,
+                max_value=q.max_value,
+                is_required=q.is_required
+            ))
+
+        # Estimate time based on question types
+        estimated_time = sum(
+            15 if q.question_type == QuestionType.MULTIPLE_CHOICE else 20
+            for q in pydantic_questions
+        )
+
+        return QuestionGenerationResponse(
+            questions=pydantic_questions,
+            estimated_time_seconds=estimated_time
+        )
+    except Exception as e:
+        logger.error(f"Question generation failed: {e}")
+        return QuestionGenerationResponse(questions=[], estimated_time_seconds=0)
+
+
+@app.post("/api/refine-prompt", response_model=PromptRefinementResponse)
+async def refine_prompt(request: PromptRefinementRequest):
+    """Merge answers into refined prompt."""
+    try:
+        from pipeline.followup_generator import FollowUpQuestionGenerator, FollowUpQuestion as FUQ
+        generator = FollowUpQuestionGenerator(OPENAI_API_KEY)
+
+        # Convert Pydantic models back to internal FollowUpQuestion objects
+        internal_questions = []
+        for q in request.questions:
+            internal_q = FUQ(
+                id=q.id,
+                question_text=q.question_text,
+                question_type=q.question_type.value,
+                category=q.category,
+                options=q.options,
+                default_value=q.default_value,
+                min_value=q.min_value,
+                max_value=q.max_value,
+                is_required=q.is_required
+            )
+            internal_questions.append(internal_q)
+
+        refined_prompt = await generator.merge_answers_into_prompt(
+            original_topic=request.original_topic,
+            questions=internal_questions,
+            answers=request.answers
+        )
+
+        # Extract structured context
+        context = {
+            "original_topic": request.original_topic,
+            "audience": None,
+            "complexity_level": None,
+            "focus_areas": [],
+            "teaching_style": []
+        }
+
+        for question in request.questions:
+            answer = request.answers.get(question.id)
+            if not answer:
+                continue
+
+            if question.category == "audience":
+                context["audience"] = answer
+            elif question.category == "depth":
+                context["complexity_level"] = answer
+            elif question.category == "focus":
+                if isinstance(answer, list):
+                    context["focus_areas"].extend(answer)
+                else:
+                    context["focus_areas"].append(answer)
+            elif question.category == "style":
+                if isinstance(answer, list):
+                    context["teaching_style"].extend(answer)
+                else:
+                    context["teaching_style"].append(answer)
+
+        return PromptRefinementResponse(
+            refined_prompt=refined_prompt,
+            context=context
+        )
+    except Exception as e:
+        logger.error(f"Prompt refinement failed: {e}")
+        return PromptRefinementResponse(
+            refined_prompt=request.original_topic,
+            context={"original_topic": request.original_topic}
+        )
+
+
+@app.post("/api/upload/photo", response_model=PhotoMetadata)
+async def upload_photo(photo: UploadFile = File(...), user_id: str = Form("default")):
+    """
+    Upload a custom photo for celebrity video.
+
+    Args:
+        photo: Photo file (JPEG, PNG, WebP)
+        user_id: User identifier
+
+    Returns:
+        PhotoMetadata with URLs to access the photo
+    """
+    try:
+        logger.info(f"Uploading photo for user {user_id}: {photo.filename}")
+
+        # Validate photo
+        photo_data, sanitized_filename = await media_validator.validate_photo(photo)
+
+        # Process photo (resize, create thumbnail, strip EXIF)
+        processed_photo, thumbnail, dimensions = media_processor.process_photo(photo_data)
+
+        # Save to storage
+        metadata = media_storage.save_photo(
+            user_id=user_id,
+            photo_data=processed_photo,
+            thumbnail_data=thumbnail,
+            filename=sanitized_filename,
+            dimensions=dimensions
+        )
+
+        logger.info(f"Photo uploaded successfully: {metadata.photo_id}")
+        return metadata
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Photo upload failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Photo upload failed: {str(e)}")
+
+
+@app.post("/api/upload/audio", response_model=AudioMetadata)
+async def upload_audio(audio: UploadFile = File(...), user_id: str = Form("default")):
+    """
+    Upload a custom audio clip for voice cloning.
+
+    Args:
+        audio: Audio file (MP3, WAV, WebM), 2-5 seconds
+        user_id: User identifier
+
+    Returns:
+        AudioMetadata with URL to access the audio
+    """
+    try:
+        logger.info(f"Uploading audio for user {user_id}: {audio.filename}")
+
+        # Validate audio
+        audio_data, sanitized_filename, duration = await media_validator.validate_audio(audio)
+
+        # Process audio (convert to mono MP3 at 24kHz, trim if needed)
+        processed_audio, final_duration, sample_rate = media_processor.process_audio(
+            audio_data, sanitized_filename
+        )
+
+        # Save to storage
+        metadata = media_storage.save_audio(
+            user_id=user_id,
+            audio_data=processed_audio,
+            filename=sanitized_filename,
+            duration=final_duration,
+            sample_rate=sample_rate
+        )
+
+        logger.info(f"Audio uploaded successfully: {metadata.audio_id}")
+        return metadata
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Audio upload failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Audio upload failed: {str(e)}")
+
+
+@app.get("/api/media/user/{user_id}")
+async def get_user_media(user_id: str):
+    """
+    Get all uploaded media for a user.
+
+    Args:
+        user_id: User identifier
+
+    Returns:
+        Dictionary with 'photos' and 'audio' lists
+    """
+    try:
+        media = media_storage.get_user_media(user_id)
+        return media
+    except Exception as e:
+        logger.error(f"Failed to get user media: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get user media: {str(e)}")
+
+
+@app.get("/api/media/photos/{user_id}/{filename}")
+async def get_photo(user_id: str, filename: str):
+    """
+    Get a photo file.
+
+    Args:
+        user_id: User identifier
+        filename: Photo filename (e.g., photo_id.jpg or photo_id_thumb.jpg)
+
+    Returns:
+        Photo file
+    """
+    try:
+        photo_dir = media_storage._get_user_photo_dir(user_id)
+        photo_path = photo_dir / filename
+
+        if not photo_path.exists():
+            raise HTTPException(status_code=404, detail="Photo not found")
+
+        return FileResponse(
+            path=photo_path,
+            media_type="image/jpeg",
+            filename=filename
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get photo: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get photo: {str(e)}")
+
+
+@app.get("/api/media/audio/{user_id}/{filename}")
+async def get_audio(user_id: str, filename: str):
+    """
+    Get an audio file.
+
+    Args:
+        user_id: User identifier
+        filename: Audio filename (e.g., audio_id.mp3)
+
+    Returns:
+        Audio file
+    """
+    try:
+        audio_dir = media_storage._get_user_audio_dir(user_id)
+        audio_path = audio_dir / filename
+
+        if not audio_path.exists():
+            raise HTTPException(status_code=404, detail="Audio not found")
+
+        return FileResponse(
+            path=audio_path,
+            media_type="audio/mpeg",
+            filename=filename
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get audio: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get audio: {str(e)}")
+
+
+@app.delete("/api/media/photos/{user_id}/{photo_id}")
+async def delete_photo(user_id: str, photo_id: str):
+    """
+    Delete a photo.
+
+    Args:
+        user_id: User identifier
+        photo_id: Photo identifier
+
+    Returns:
+        Success message
+    """
+    try:
+        success = media_storage.delete_photo(user_id, photo_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Photo not found")
+
+        return {"message": f"Photo {photo_id} deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete photo: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete photo: {str(e)}")
+
+
+@app.delete("/api/media/audio/{user_id}/{audio_id}")
+async def delete_audio(user_id: str, audio_id: str):
+    """
+    Delete an audio file.
+
+    Args:
+        user_id: User identifier
+        audio_id: Audio identifier
+
+    Returns:
+        Success message
+    """
+    try:
+        success = media_storage.delete_audio(user_id, audio_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Audio not found")
+
+        return {"message": f"Audio {audio_id} deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete audio: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete audio: {str(e)}")
 
 
 @app.websocket("/ws/{job_id}")

@@ -323,6 +323,64 @@ class VideoStitcher:
             logger.error(f"Failed to get duration for {media_path}: {e}")
             raise Exception(f"Duration extraction failed: {e}")
 
+    async def extract_audio(
+        self,
+        video_path: Path,
+        output_path: Path,
+    ) -> Path:
+        """
+        Extract audio from video file.
+
+        Args:
+            video_path: Path to video file
+            output_path: Path for extracted audio file
+
+        Returns:
+            Path to extracted audio file
+
+        Raises:
+            Exception: If audio extraction fails
+        """
+        try:
+            logger.info(f"Extracting audio from {video_path} to {output_path}")
+
+            # Verify input file exists
+            if not video_path.exists():
+                raise FileNotFoundError(f"Video file not found: {video_path}")
+
+            # Prepare output directory
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Build ffmpeg command to extract audio
+            cmd = [
+                "ffmpeg",
+                "-i", str(video_path),
+                "-vn",  # No video
+                "-acodec", "libmp3lame",  # MP3 codec
+                "-b:a", "192k",  # Audio bitrate
+                "-y",  # Overwrite output file
+                str(output_path),
+            ]
+
+            # Run ffmpeg command
+            result = await asyncio.to_thread(
+                subprocess.run,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            if result.returncode != 0:
+                raise Exception(f"ffmpeg audio extraction failed: {result.stderr}")
+
+            logger.info(f"Audio extracted successfully: {output_path}")
+            return output_path
+
+        except Exception as e:
+            logger.error(f"Failed to extract audio from {video_path}: {e}")
+            raise Exception(f"Audio extraction failed: {e}")
+
     async def add_subtitles(
         self,
         video_path: Path,
@@ -561,21 +619,21 @@ class VideoStitcher:
         self,
         top_video_path: Path,
         bottom_video_path: Path,
-        audio_path: Path,
-        output_path: Path,
+        audio_path: Optional[Path] = None,
+        output_path: Path = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> Path:
         """
         Composite two videos vertically (top half and bottom half) into a 9:16 video.
 
         This creates a mobile-friendly video where:
-        - Top half: Educational content (Manim animations)
-        - Bottom half: Lip-synced celebrity video
+        - Top half: Educational content (Manim animations, no audio)
+        - Bottom half: Lip-synced celebrity video (with audio already baked in)
 
         Args:
-            top_video_path: Path to video for top half (educational content)
-            bottom_video_path: Path to video for bottom half (celebrity)
-            audio_path: Path to audio file (will be the final audio track)
+            top_video_path: Path to video for top half (educational content, no audio)
+            bottom_video_path: Path to video for bottom half (celebrity with lip-synced audio baked in)
+            audio_path: DEPRECATED - Audio from bottom_video_path will be used instead
             output_path: Path for output composite video
             progress_callback: Optional callback for progress updates
 
@@ -596,43 +654,43 @@ class VideoStitcher:
                 raise FileNotFoundError(f"Top video not found: {top_video_path}")
             if not bottom_video_path.exists():
                 raise FileNotFoundError(f"Bottom video not found: {bottom_video_path}")
-            if not audio_path.exists():
-                raise FileNotFoundError(f"Audio not found: {audio_path}")
+
+            if audio_path is not None:
+                logger.warning(f"DEPRECATED: audio_path parameter ignored. Using audio from bottom video (celebrity_lipsynced_full.mp4) which already has lip-synced audio baked in.")
 
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Get durations for all inputs
-            audio_duration = await self._get_duration(audio_path)
-            top_duration = await self._get_duration(top_video_path)
+            # Get durations - use bottom video as the authoritative source since it has the audio
             bottom_duration = await self._get_duration(bottom_video_path)
+            top_duration = await self._get_duration(top_video_path)
 
-            logger.info(f"Input durations - Top: {top_duration:.4f}s, Bottom: {bottom_duration:.4f}s, Audio: {audio_duration:.4f}s")
+            logger.info(f"Input durations - Top: {top_duration:.4f}s, Bottom (with audio): {bottom_duration:.4f}s")
 
-            # CRITICAL FIX: Trim both input videos to EXACT audio duration BEFORE compositing
-            # This prevents the vstack filter from processing extra frames beyond the audio duration
+            # CRITICAL FIX: Use bottom video duration as reference (it has the lip-synced audio baked in)
+            # Trim both videos to match the bottom video's duration to ensure perfect sync
             # Using filter_complex to trim ensures frame-accurate cutting at the filter level
             #
-            # The bug was: When using -t on the output with filter_complex, ffmpeg processes ALL frames
-            # through the filter first (using the longest input), THEN trims the output. This causes:
-            # 1. Extra frames to be processed (slower)
-            # 2. Inconsistent duration matching (97s instead of 91s)
-            # 3. Audio/video sync drift
+            # The bug was: We were re-adding full_audio.mp3 on top of celebrity_lipsynced_full.mp4
+            # which already has the lip-synced audio baked in. This caused:
+            # 1. Duration mismatches between final_video.mp4 and celebrity_lipsynced_full.mp4
+            # 2. Audio/video sync issues
+            # 3. Re-splicing audio on top of videos that already have audio
             #
-            # Solution: Use trim filter on EACH INPUT before vstack to ensure exact duration matching
+            # Solution: Use audio from bottom video (celebrity_lipsynced_full.mp4) directly
+            # and trim both videos to match the bottom video's duration
             cmd = [
                 "ffmpeg",
                 "-i", str(top_video_path),
                 "-i", str(bottom_video_path),
-                "-i", str(audio_path),
                 "-filter_complex",
                 (
-                    # TRIM top video to exact audio duration FIRST (before scaling)
-                    f"[0:v]trim=duration={audio_duration},setpts=PTS-STARTPTS,"
+                    # TRIM top video to exact bottom video duration FIRST (before scaling)
+                    f"[0:v]trim=duration={bottom_duration},setpts=PTS-STARTPTS,"
                     # Then scale to 1080x960 (9:8 aspect ratio for top half)
                     "scale=1080:960:force_original_aspect_ratio=increase,"
                     "crop=1080:960[top];"
-                    # TRIM bottom video to exact audio duration FIRST (before scaling)
-                    f"[1:v]trim=duration={audio_duration},setpts=PTS-STARTPTS,"
+                    # TRIM bottom video to its own duration to ensure consistency (before scaling)
+                    f"[1:v]trim=duration={bottom_duration},setpts=PTS-STARTPTS,"
                     # Then scale and crop to 1080x960 (9:8 bottom half from 9:16 source)
                     "scale=1080:960:force_original_aspect_ratio=increase,"
                     "crop=1080:960[bottom];"
@@ -640,19 +698,18 @@ class VideoStitcher:
                     "[top][bottom]vstack=inputs=2[v]"
                 ),
                 "-map", "[v]",
-                "-map", "2:a",  # Use audio from third input
+                "-map", "1:a",  # Use audio from bottom video (celebrity_lipsynced_full.mp4 with lip-synced audio)
                 "-c:v", "libx264",
                 "-preset", "medium",
                 "-crf", "23",
-                "-c:a", "aac",
-                "-b:a", "192k",
+                "-c:a", "copy",  # Copy audio as-is (already encoded and synced in bottom video)
                 # Remove -t and -shortest since trimming is now done in the filter
                 # This ensures the output matches the trimmed filter output exactly
                 "-y",
                 str(output_path),
             ]
 
-            logger.info(f"Running ffmpeg composite with input trimming to {audio_duration:.4f}s")
+            logger.info(f"Running ffmpeg composite with input trimming to {bottom_duration:.4f}s (using audio from bottom video)")
 
             result = await asyncio.to_thread(
                 subprocess.run,
@@ -670,13 +727,15 @@ class VideoStitcher:
             if not output_path.exists():
                 raise Exception(f"Output file not created: {output_path}")
 
-            # Verify output duration matches audio
+            # Verify output duration matches bottom video (which has the lip-synced audio)
             output_duration = await self._get_duration(output_path)
-            duration_diff = abs(output_duration - audio_duration)
-            logger.info(f"Composite output duration: {output_duration:.4f}s (target: {audio_duration:.4f}s, diff: {duration_diff:.4f}s)")
+            duration_diff = abs(output_duration - bottom_duration)
+            logger.info(f"Composite output duration: {output_duration:.4f}s (target: {bottom_duration:.4f}s, diff: {duration_diff:.4f}s)")
 
             if duration_diff > 0.1:
-                logger.warning(f"Composite duration differs from audio by {duration_diff:.4f}s (may cause sync issues)")
+                logger.warning(f"Composite duration differs from bottom video by {duration_diff:.4f}s (may cause sync issues)")
+            else:
+                logger.info(f"SUCCESS: Final video duration matches celebrity_lipsynced_full.mp4 exactly!")
 
             logger.info(f"Video compositing complete: {output_path}")
 
@@ -837,33 +896,37 @@ class VideoStitcher:
 
             try:
                 # Run ffmpeg concat with re-encoding to prevent timing drift
-                # ZERO TOLERANCE STRATEGY:
+                # ZERO TOLERANCE STRATEGY + CORRUPTION HANDLING:
                 # 1. Use concat demuxer with re-encoding (not concat filter)
                 # 2. Re-encode both video and audio for frame/sample accurate concatenation
                 # 3. Use -vsync cfr to ensure constant frame rate across all segments
                 # 4. Use -fflags +genpts to regenerate timestamps for perfect continuity
                 # 5. Use -af aresample=async=1 to ensure audio samples align perfectly
                 # 6. Reset timestamps to ensure no gaps or overlaps between segments
+                # 7. Handle corrupted AAC from Replicate lip-sync (ignore decoding errors)
                 cmd = [
                     "ffmpeg",
                     "-f", "concat",
                     "-safe", "0",
-                    "-fflags", "+genpts",  # Generate perfect timestamps for concatenated segments
+                    "-err_detect", "ignore_err",  # Ignore corrupted AAC frames from Replicate
+                    "-fflags", "+genpts+igndts",  # Generate perfect timestamps + ignore DTS errors
                     "-i", str(concat_file),
                     "-c:v", "libx264",  # Re-encode video for frame-accurate concatenation
                     "-preset", "medium",
                     "-crf", "23",
-                    "-c:a", "aac",  # Re-encode audio for sample-accurate concatenation
+                    "-c:a", "aac",  # Re-encode audio to fix corrupted AAC from lip-sync
                     "-b:a", "192k",
                     "-ar", "48000",  # Ensure consistent audio sample rate
+                    "-strict", "experimental",  # Allow experimental AAC encoder features
                     "-vsync", "cfr",  # Constant frame rate (no frame drops/duplicates)
                     "-af", "aresample=async=1:first_pts=0",  # Resample audio to prevent drift, reset timestamps
                     "-avoid_negative_ts", "make_zero",  # Ensure timestamps start at zero
+                    "-max_muxing_queue_size", "9999",  # Large queue for problematic streams
                     "-y",
                     str(output_path),
                 ]
 
-                logger.info(f"Running ffmpeg concatenation with ZERO TOLERANCE (frame-perfect re-encoding)")
+                logger.info(f"Running ffmpeg concatenation with ZERO TOLERANCE (frame-perfect re-encoding + corrupted AAC handling)")
 
                 result = await asyncio.to_thread(
                     subprocess.run,

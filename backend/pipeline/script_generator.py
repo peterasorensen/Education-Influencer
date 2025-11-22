@@ -6,7 +6,7 @@ Creates engaging educational content with multiple characters (boy and girl voic
 """
 
 import logging
-from typing import Callable, Optional, List, Dict
+from typing import Callable, Optional, List, Dict, Any
 from openai import AsyncOpenAI
 import json
 
@@ -32,6 +32,7 @@ class ScriptGenerator:
         duration_seconds: int = 60,
         progress_callback: Optional[Callable[[str, int], None]] = None,
         speaker_names: Optional[Dict[str, str]] = None,
+        refined_context: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, str]]:
         """
         Generate a multi-voice educational script.
@@ -43,6 +44,8 @@ class ScriptGenerator:
             speaker_names: Optional dict with 'teacher' and 'student' names
                           e.g., {"teacher": "Drake", "student": "Sydney"}
                           Defaults to {"teacher": "Teacher", "student": "Student"}
+            refined_context: Optional enhanced context from follow-up questions
+                            Contains: audience, complexity_level, focus_areas, teaching_style
 
         Returns:
             List of script segments with speaker and text
@@ -114,34 +117,74 @@ TIMING:
 - Natural pauses for Student questions and reactions
 - Build to key insights with dramatic reveals"""
 
+            # If refined context provided, enhance prompts
+            if refined_context:
+                enhancements = []
+                if audience := refined_context.get("audience"):
+                    enhancements.append(f"\nAUDIENCE: {audience}. Adjust language and examples accordingly.")
+                if complexity := refined_context.get("complexity_level"):
+                    levels = {
+                        1: "simple analogies, no jargon",
+                        2: "basic terminology",
+                        3: "balanced",
+                        4: "technical details",
+                        5: "expert-level"
+                    }
+                    complexity_desc = levels.get(complexity, "balanced")
+                    enhancements.append(f"\nCOMPLEXITY: {complexity_desc}")
+                if focus := refined_context.get("focus_areas"):
+                    if focus:  # Check if list is not empty
+                        enhancements.append(f"\nFOCUS: Emphasize {', '.join(str(f) for f in focus)}")
+                if teaching_style := refined_context.get("teaching_style"):
+                    if teaching_style:  # Check if list is not empty
+                        enhancements.append(f"\nTEACHING STYLE: {', '.join(str(s) for s in teaching_style)}")
+
+                if enhancements:
+                    system_prompt += "\n".join(enhancements)
+                    logger.info(f"Enhanced system prompt with context: {', '.join(refined_context.keys())}")
+
+            # Calculate word count constraint based on speaking rate
+            # Average speaking rate: 2.5 words per second (150 words/minute)
+            # Use conservative estimate to ensure we stay under duration_seconds
+            max_words = int(duration_seconds * 2.5)
+
             user_prompt = f"""Topic: {topic}
-Target Duration: ~{duration_seconds} seconds
+Target Duration: EXACTLY {duration_seconds} seconds (STRICT MAXIMUM)
 Target Segments: {max(10, duration_seconds // 4)} segments
+CRITICAL WORD LIMIT: {max_words} words TOTAL across ALL segments (Average speaking rate: 2.5 words/sec)
+
+BREVITY IS ESSENTIAL - This must fit in {duration_seconds} seconds of audio!
 
 CREATE AN EXTRAORDINARY LEARNING EXPERIENCE:
 
 Structure your dialogue like this:
 
-1. HOOK (Why this matters)
-   - {teacher_name}: Start with a fascinating question or real-world connection
-   - {student_name}: Express curiosity or share a relatable experience
+1. HOOK (Why this matters) - 2-3 SHORT exchanges
+   - {teacher_name}: Start with a fascinating question or real-world connection (1 sentence)
+   - {student_name}: Express curiosity or share a relatable experience (1 sentence)
 
-2. BUILD FROM SIMPLE
-   - {teacher_name}: Introduce the SIMPLEST possible example with concrete numbers/objects
+2. BUILD FROM SIMPLE - 2-3 SHORT exchanges
+   - {teacher_name}: Introduce the SIMPLEST possible example with concrete numbers/objects (1-2 sentences)
    - Use visual language: "Let's draw...", "Imagine...", "Picture this..."
 
-3. DEVELOP INTUITION
-   - {teacher_name}: Use powerful analogies and visual metaphors
-   - {student_name}: Ask clarifying questions, make connections
+3. DEVELOP INTUITION - 3-4 SHORT exchanges
+   - {teacher_name}: Use powerful analogies and visual metaphors (1-2 sentences per exchange)
+   - {student_name}: Ask clarifying questions, make connections (1 sentence)
    - Build complexity gradually, one concept at a time
 
-4. AHA MOMENT
-   - {teacher_name}: Reveal the key insight with enthusiasm
-   - {student_name}: Express understanding with specific realization
+4. AHA MOMENT - 2 SHORT exchanges
+   - {teacher_name}: Reveal the key insight with enthusiasm (1 sentence)
+   - {student_name}: Express understanding with specific realization (1 sentence)
 
-5. REINFORCE & EXTEND
-   - {teacher_name}: Show how the concept applies more broadly
-   - {student_name}: Ask about extensions or applications
+5. REINFORCE & EXTEND - 1-2 SHORT exchanges
+   - {teacher_name}: Show how the concept applies more broadly (1 sentence)
+   - {student_name}: Ask about extensions or applications (1 sentence)
+
+STRICT RULES:
+- Each segment MUST be 1-2 sentences maximum (10-20 words per segment)
+- NO long explanations - keep it punchy and fast-paced
+- TOTAL word count across ALL segments cannot exceed {max_words} words
+- Prioritize clarity and impact over completeness
 
 VISUAL INTEGRATION:
 Every line should naturally reference visuals:
@@ -151,7 +194,7 @@ Every line should naturally reference visuals:
 - "Let's transform this into..."
 - "Look at how this changes..."
 
-Make learning feel like an exciting discovery journey!"""
+Make learning feel like an exciting discovery journey - but KEEP IT BRIEF!"""
 
             logger.info(f"Generating script for topic: {topic}")
 
@@ -213,9 +256,26 @@ Make learning feel like an exciting discovery journey!"""
 
             logger.info(f"Generated script with {len(script)} segments")
 
+            # Validate and enforce word count limit
+            total_words = sum(len(segment["text"].split()) for segment in script)
+            logger.info(f"Total word count: {total_words} words (limit: {max_words} words)")
+
+            if total_words > max_words:
+                logger.warning(f"Script exceeds word limit ({total_words} > {max_words}), truncating to fit duration")
+                script = self._truncate_script_to_word_limit(script, max_words)
+                total_words = sum(len(segment["text"].split()) for segment in script)
+                logger.info(f"Script truncated to {len(script)} segments, {total_words} words")
+
+            # Estimate duration based on speaking rate
+            estimated_duration = total_words / 2.5
+            logger.info(f"Estimated audio duration: {estimated_duration:.1f} seconds (target: {duration_seconds} seconds)")
+
+            if estimated_duration > duration_seconds * 1.1:  # Allow 10% tolerance
+                logger.warning(f"Estimated duration ({estimated_duration:.1f}s) significantly exceeds target ({duration_seconds}s)")
+
             if progress_callback:
                 progress_callback(
-                    f"Script generated with {len(script)} dialogue segments", 20
+                    f"Script generated with {len(script)} dialogue segments (~{estimated_duration:.0f}s)", 20
                 )
 
             return script
@@ -226,6 +286,46 @@ Make learning feel like an exciting discovery journey!"""
         except Exception as e:
             logger.error(f"Script generation failed: {e}")
             raise Exception(f"Failed to generate script: {e}")
+
+    def _truncate_script_to_word_limit(
+        self, script: List[Dict[str, str]], max_words: int
+    ) -> List[Dict[str, str]]:
+        """
+        Truncate script to fit within word limit while preserving dialogue flow.
+
+        Args:
+            script: Original script segments
+            max_words: Maximum total word count
+
+        Returns:
+            Truncated script that fits within word limit
+        """
+        truncated = []
+        current_words = 0
+
+        for segment in script:
+            segment_words = len(segment["text"].split())
+
+            # If adding this segment would exceed limit, check if we can add a shortened version
+            if current_words + segment_words > max_words:
+                # Calculate how many words we can still add
+                remaining_words = max_words - current_words
+
+                if remaining_words >= 5:  # Only add if we can include at least 5 words
+                    # Truncate this segment to fit
+                    words = segment["text"].split()
+                    truncated_text = " ".join(words[:remaining_words]) + "..."
+                    truncated.append({
+                        "speaker": segment["speaker"],
+                        "text": truncated_text
+                    })
+
+                break  # Stop adding more segments
+
+            truncated.append(segment)
+            current_words += segment_words
+
+        return truncated
 
     async def refine_script(
         self,

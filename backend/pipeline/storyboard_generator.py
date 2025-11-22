@@ -159,18 +159,31 @@ Return valid JSON with "metadata" and "scenes" keys."""
                         for w in seg["words"][:10]:  # Show up to 10 words per segment
                             word_sync_info += f"  - \"{w.get('word', '')}\" at {w.get('start', 0):.2f}s\n"
 
-            user_prompt = f"""Topic: {topic}
+            user_prompt = f"""EDUCATIONAL TOPIC: {topic}
 Duration: {total_duration:.1f}s
 
-Script:
+SCRIPT (what's being taught):
 {script_text}
 {word_sync_info}
 
-CRITICAL: Generate storyboard JSON with word_sync actions to make animations POP!
-- Match visuals to narration
-- Use proper regions and cleanup
-- Add word_sync array for EACH scene with at least 2-4 synchronized actions
-- Make animations DYNAMIC and ENGAGING by syncing to specific words being spoken"""
+YOUR JOB: Create visuals that TEACH this concept, not generic diagrams!
+
+TEACHING VISUALS:
+- For math/physics → Show actual equations, formulas, relationships
+- For processes → Show step-by-step flow with labeled stages
+- For concepts → Illustrate with concrete examples/analogies
+- For data → Plot actual graphs/charts that demonstrate the point
+- For systems → Diagram real components and how they connect
+
+EXAMPLE GOOD: Topic "Pythagorean theorem"
+- visual_type: "shape", description: "Draw right triangle with sides labeled a, b, c"
+- visual_type: "equation", description: "Show equation a² + b² = c²"
+- visual_type: "diagram", description: "Illustrate squares on each side to prove theorem"
+
+EXAMPLE BAD: Generic boxes labeled "Input → Process → Output" (too vague!)
+
+Make visuals that directly teach {topic} based on what's in the script!
+Add word_sync for dynamic emphasis."""
 
             logger.info(f"Generating storyboard for: {topic}")
 

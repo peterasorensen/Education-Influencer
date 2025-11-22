@@ -20,6 +20,7 @@ from .visual_script_generator import VisualScriptGenerator  # Legacy - backward 
 from .storyboard_generator import StoryboardGenerator  # NEW
 from .spatial_tracker import SpatialTracker, ObjectType, Region, BoundingBox, TrackedObject  # NEW
 from .manim_generator import ManimGenerator
+from .remotion_generator import RemotionGenerator  # NEW - Alternative to Manim
 from .layout_engine import LayoutEngine, LayoutStrategy, ManimCodeTemplate  # NEW
 from .image_to_video_generator import ImageToVideoGenerator
 from .lipsync_generator import LipsyncGenerator
@@ -41,6 +42,7 @@ __all__ = [
     "LayoutStrategy",  # NEW
     "ManimCodeTemplate",  # NEW
     "ManimGenerator",
+    "RemotionGenerator",  # NEW - Alternative to Manim
     "ImageToVideoGenerator",
     "LipsyncGenerator",
     "VideoStitcher",

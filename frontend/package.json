@@ -5,19 +5,31 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:editor": "vite --open /video-editor.html",
     "build": "tsc -b && vite build",
+    "build:editor": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:editor": "vite preview --open /video-editor.html"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "@hookform/resolvers": "^5.2.2",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "react-hook-form": "^7.66.1",
+    "sonner": "^2.0.7",
+    "styled-components": "^6.1.19",
+    "zod": "^4.1.12",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
     "@types/node": "^24.6.0",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
+    "@types/styled-components": "^5.1.36",
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.36.0",

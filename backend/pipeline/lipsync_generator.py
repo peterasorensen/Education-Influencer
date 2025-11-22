@@ -156,7 +156,7 @@ class LipsyncGenerator:
                         "fps": 25,
                         "bbox_shift": 0,
                     }
-                    timeout_seconds = 180  # 3 minute timeout
+                    timeout_seconds = 1800  # 30 minute timeout (no artificial cap)
                 elif "kling" in self.model:
                     # Kling lip-sync uses video_url and audio_file
                     logger.info(f"Running Kling lip-sync model: {self.model}")
@@ -167,7 +167,7 @@ class LipsyncGenerator:
                         "video_url": video_file,
                         "audio_file": audio_file,
                     }
-                    timeout_seconds = 180  # 3 minute timeout
+                    timeout_seconds = 1800  # 30 minute timeout (no artificial cap)
                 else:
                     # Pixverse uses video and audio
                     logger.info(f"Running Pixverse lipsync model: {self.model}")
@@ -178,7 +178,7 @@ class LipsyncGenerator:
                         "video": video_file,
                         "audio": audio_file,
                     }
-                    timeout_seconds = 300  # 5 minute timeout for Pixverse
+                    timeout_seconds = 1800  # 30 minute timeout (no artificial cap)
 
                 logger.info(f"Calling replicate.run with model: {self.model}")
                 logger.info(f"Input parameters: {list(model_input.keys())}")

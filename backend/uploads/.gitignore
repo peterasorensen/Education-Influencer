@@ -1,0 +1,7 @@
+# Ignore all files in uploads directory (user-generated content)
+*
+# But keep the directory structure
+!.gitignore
+!photos/
+!audio/
+!metadata/

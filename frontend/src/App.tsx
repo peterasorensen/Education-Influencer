@@ -1,60 +1,30 @@
 import { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import './App.css';
 import type {
   PipelineStep,
   ProgressUpdate,
-  VideoGenerationRequest,
   VideoGenerationResponse,
   VideoGenerationComplete,
   ConnectionState,
-  StepInfo,
 } from './types';
+import type { CelebrityConfig } from './types/media';
 
-const PIPELINE_STEPS: StepInfo[] = [
-  {
-    key: 'generating_script',
-    label: 'Generating Script',
-    description: 'AI is creating the educational script',
-  },
-  {
-    key: 'creating_audio',
-    label: 'Creating Audio',
-    description: 'Converting script to natural speech',
-  },
-  {
-    key: 'extracting_timestamps',
-    label: 'Extracting Timestamps',
-    description: 'Analyzing audio for timing',
-  },
-  {
-    key: 'planning_visuals',
-    label: 'Planning Visuals',
-    description: 'Designing animation sequences',
-  },
-  {
-    key: 'generating_animations',
-    label: 'Generating Animations',
-    description: 'Creating visual content (9:16 format)',
-  },
-  {
-    key: 'creating_celebrity_videos',
-    label: 'Creating Celebrity Video',
-    description: 'Generating expressive celebrity narrator',
-  },
-  {
-    key: 'lip_syncing',
-    label: 'Lip-Syncing',
-    description: 'Synchronizing audio with celebrity video',
-  },
-  {
-    key: 'compositing_video',
-    label: 'Compositing Video',
-    description: 'Combining education & celebrity into 9:16 video',
-  },
-];
+// Components
+import Header from './components/Header';
+import TopicInput from './components/TopicInput';
+import RendererSelector from './components/RendererSelector';
+import JobResume from './components/JobResume';
+import ProgressTracker from './components/ProgressTracker';
+import VideoPlayer from './components/VideoPlayer';
+import ErrorMessage from './components/ErrorMessage';
+import Toast from './components/Toast';
+import { FollowUpQuestionsModal } from './components/followup/FollowUpQuestionsModal';
+import { CelebritySelector } from './components/celebrity/CelebritySelector';
 
 function App() {
   const [topic, setTopic] = useState('');
+  const [renderer, setRenderer] = useState<'manim' | 'remotion'>('manim');
   const [isGenerating, setIsGenerating] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [progressSteps, setProgressSteps] = useState<Map<PipelineStep, ProgressUpdate>>(new Map());
@@ -63,6 +33,15 @@ function App() {
   const [lastJobId, setLastJobId] = useState<string | null>(localStorage.getItem('lastJobId'));
   const [manualJobId, setManualJobId] = useState('');
   const [resumeMode, setResumeMode] = useState(false);
+  const [showFollowUpModal, setShowFollowUpModal] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [refinedPrompt, setRefinedPrompt] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [refinedContext, setRefinedContext] = useState<any>(null);
+  const [celebrities, setCelebrities] = useState<CelebrityConfig[]>([
+    { mode: 'preset', name: 'drake' },
+    { mode: 'preset', name: 'sydney_sweeney' }
+  ]);
   const wsRef = useRef<WebSocket | null>(null);
 
   // Cleanup WebSocket on unmount
@@ -74,10 +53,9 @@ function App() {
     };
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!topic.trim() && !resumeMode) {
+  const handleSubmit = async (submitTopic: string) => {
+    if (!submitTopic.trim() && !resumeMode) {
+      toast.error('Please enter a topic');
       setError('Please enter a topic');
       return;
     }
@@ -85,22 +63,56 @@ function App() {
     const jobIdToResume = manualJobId.trim() || lastJobId;
 
     if (resumeMode && !jobIdToResume) {
+      toast.error('Please enter a job ID to resume');
       setError('Please enter a job ID to resume');
       return;
     }
 
+    // If in resume mode, skip follow-up questions
+    if (resumeMode) {
+      startVideoGeneration(submitTopic || 'Resuming...', null, jobIdToResume);
+    } else {
+      // Show follow-up questions modal
+      setShowFollowUpModal(true);
+    }
+  };
+
+  const handleFollowUpComplete = (refined: string, context: any) => {
+    setRefinedPrompt(refined);
+    setRefinedContext(context);
+    setShowFollowUpModal(false);
+    // Start video generation with refined prompt
+    console.log('Follow-up refinement:', { refined, context });
+    startVideoGeneration(refined, context, null);
+  };
+
+  const handleFollowUpSkip = () => {
+    setShowFollowUpModal(false);
+    // Start video generation with original topic
+    startVideoGeneration(topic, null, null);
+  };
+
+  const startVideoGeneration = async (topicText: string, context: any, resumeJobId: string | null) => {
     setIsGenerating(true);
     setError(null);
     setVideoUrl(null);
     setProgressSteps(new Map());
 
+    // Show loading toast
+    const loadingToast = toast.loading(resumeJobId ? 'Resuming video generation...' : 'Starting video generation...');
+
     try {
       // Send POST request to backend
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-      const requestBody: any = resumeMode
-        ? { topic: topic || 'Resuming...', resume_job_id: jobIdToResume }
-        : { topic };
+      const requestBody: any = resumeJobId
+        ? { topic: topicText, resume_job_id: resumeJobId, renderer }
+        : {
+            topic: topicText,
+            renderer,
+            refined_context: context,
+            celebrities
+          };
 
       const response = await fetch(`${apiUrl}/api/generate`, {
         method: 'POST',
@@ -123,24 +135,42 @@ function App() {
       // Disable resume mode after starting
       setResumeMode(false);
 
+      // Dismiss loading toast and show success
+      toast.dismiss(loadingToast);
+      toast.success(resumeJobId ? 'Resuming video generation!' : 'Video generation started!', {
+        description: `Job ID: ${data.jobId.substring(0, 8)}...`
+      });
+
       // Connect to WebSocket for progress updates
       const wsBaseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
       const wsUrl = data.websocketUrl || `${wsBaseUrl}/ws/${data.jobId}`;
       connectWebSocket(wsUrl);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start video generation');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to start video generation';
+      setError(errorMessage);
       setIsGenerating(false);
+
+      toast.dismiss(loadingToast);
+      toast.error('Failed to start generation', {
+        description: errorMessage
+      });
     }
   };
 
   const connectWebSocket = (url: string, retryCount = 0) => {
     setConnectionState('connecting');
+    if (retryCount === 0) {
+      toast.info('Connecting to server...');
+    }
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setConnectionState('connected');
+      if (retryCount === 0) {
+        toast.success('Connected to server');
+      }
       console.log('WebSocket connected');
     };
 
@@ -155,6 +185,15 @@ function App() {
             newMap.set(update.step, update);
             return newMap;
           });
+
+          // Show toast for step changes
+          if (update.status === 'in_progress') {
+            toast.info(update.message || `Processing: ${update.step.replace(/_/g, ' ')}`);
+          } else if (update.status === 'completed') {
+            toast.success(`Completed: ${update.step.replace(/_/g, ' ')}`);
+          } else if (update.status === 'error') {
+            toast.error(`Error in: ${update.step.replace(/_/g, ' ')}`);
+          }
         } else if (data.type === 'complete') {
           const complete: VideoGenerationComplete = data.data;
           // Prepend backend URL to relative video path
@@ -163,22 +202,35 @@ function App() {
           setVideoUrl(fullVideoUrl);
           setIsGenerating(false);
           setConnectionState('disconnected');
-          // Don't clear lastJobId - keep it for potential resume
+
+          toast.success('Video generated successfully!', {
+            description: `Duration: ${complete.duration}s`,
+            duration: 6000
+          });
         } else if (data.type === 'error') {
-          setError(data.message || 'An error occurred during video generation');
+          const errorMsg = data.message || 'An error occurred during video generation';
+          setError(errorMsg);
           setIsGenerating(false);
           setConnectionState('error');
+
+          toast.error('Generation failed', {
+            description: errorMsg
+          });
         } else if (data.type === 'ping') {
           // Respond to server pings to keep connection alive
           console.log('Received ping from server');
         }
       } catch (err) {
         console.error('Failed to parse WebSocket message:', err);
+        toast.error('Failed to parse server message');
       }
     };
 
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
+      if (retryCount === 0) {
+        toast.error('WebSocket connection error');
+      }
     };
 
     ws.onclose = (event) => {
@@ -188,194 +240,124 @@ function App() {
       if (isGenerating && retryCount < 3) {
         console.log(`Attempting to reconnect (attempt ${retryCount + 1}/3)...`);
         setConnectionState('connecting');
+        toast.warning(`Reconnecting (${retryCount + 1}/3)...`);
+
         setTimeout(() => {
           connectWebSocket(url, retryCount + 1);
         }, 2000 * (retryCount + 1)); // Exponential backoff
       } else {
         setConnectionState('disconnected');
         if (isGenerating && retryCount >= 3) {
-          setError('Lost connection to server. Your video may still be processing.');
+          const errorMsg = 'Lost connection to server. Your video may still be processing.';
+          setError(errorMsg);
           setIsGenerating(false);
+
+          toast.error('Connection lost', {
+            description: 'Max retry attempts reached. Your video may still be processing.'
+          });
         }
       }
     };
   };
 
-  const getStepStatus = (stepKey: PipelineStep): 'pending' | 'in_progress' | 'completed' | 'error' => {
-    const update = progressSteps.get(stepKey);
-    return update?.status || 'pending';
+  const handleNewVideo = () => {
+    setVideoUrl(null);
+    setTopic('');
+    setProgressSteps(new Map());
+    setResumeMode(false);
+    setError(null);
+    setRefinedPrompt(null);
+    setRefinedContext(null);
+    setCelebrities([
+      { mode: 'preset', name: 'drake' },
+      { mode: 'preset', name: 'sydney_sweeney' }
+    ]);
+    toast.info('Ready to create a new video');
+  };
+
+  const handleDismissError = () => {
+    setError(null);
   };
 
   return (
     <div className="app">
+      <Toast />
       <div className="container">
-        <header className="header">
-          <h1 className="title">EduVideo AI</h1>
-          <p className="tagline">Transform any topic into an engaging educational video</p>
-        </header>
+        <Header />
 
         <main className="main-content">
-          <form onSubmit={handleSubmit} className="input-section">
-            <div className="input-wrapper">
-              <textarea
-                className="topic-input"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                placeholder={resumeMode ? "Resuming from previous job..." : "Enter your educational topic... (e.g., 'Explain quantum entanglement', 'How does photosynthesis work?')"}
-                disabled={isGenerating || resumeMode}
-                rows={3}
-              />
-            </div>
+          <div>
+            <TopicInput
+              value={topic}
+              onChange={setTopic}
+              onSubmit={handleSubmit}
+              disabled={isGenerating}
+              resumeMode={resumeMode}
+            />
 
             {!isGenerating && (
-              <div className="resume-section">
-                <label className="resume-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={resumeMode}
-                    onChange={(e) => setResumeMode(e.target.checked)}
-                  />
-                  <span className="resume-label">
-                    Resume from existing job
-                  </span>
-                </label>
-                {resumeMode && (
-                  <div className="manual-job-input">
-                    <input
-                      type="text"
-                      className="job-id-input"
-                      value={manualJobId}
-                      onChange={(e) => setManualJobId(e.target.value)}
-                      placeholder={lastJobId ? `Last job: ${lastJobId}` : "Enter job ID (e.g., 550e8400-e29b-41d4...)"}
-                      disabled={isGenerating}
-                    />
-                  </div>
-                )}
-              </div>
+              <>
+                <RendererSelector
+                  value={renderer}
+                  onChange={setRenderer}
+                  disabled={isGenerating}
+                />
+
+                <JobResume
+                  enabled={resumeMode}
+                  jobId={manualJobId}
+                  onToggle={setResumeMode}
+                  onJobIdChange={setManualJobId}
+                  lastJobId={lastJobId}
+                  disabled={isGenerating}
+                />
+              </>
+            )}
+
+            {!isGenerating && !resumeMode && (
+              <CelebritySelector
+                celebrities={celebrities}
+                onCelebritiesChange={setCelebrities}
+              />
             )}
 
             <button
               type="submit"
               className={`generate-button ${isGenerating ? 'generating' : ''} ${resumeMode ? 'resume-mode' : ''}`}
               disabled={isGenerating}
+              onClick={() => handleSubmit(topic)}
+              aria-label={isGenerating ? 'Generating video' : resumeMode ? 'Resume and continue' : 'Generate video'}
+              aria-busy={isGenerating}
             >
               {isGenerating ? (
                 <>
-                  <span className="spinner"></span>
+                  <span className="spinner" aria-hidden="true"></span>
                   {resumeMode ? 'Resuming...' : 'Generating...'}
                 </>
               ) : resumeMode ? (
-                '🔄 Resume & Continue'
+                'Resume & Continue'
               ) : (
                 'Generate Video'
               )}
             </button>
-          </form>
+          </div>
 
           {error && (
-            <div className="error-message">
-              <svg className="error-icon" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              {error}
-            </div>
+            <ErrorMessage error={error} onDismiss={handleDismissError} />
           )}
 
           {isGenerating && (
-            <div className="progress-section">
-              <div className="connection-status">
-                <div className={`status-indicator ${connectionState}`}></div>
-                <span className="status-text">
-                  {connectionState === 'connected' && 'Connected'}
-                  {connectionState === 'connecting' && 'Connecting...'}
-                  {connectionState === 'disconnected' && 'Disconnected'}
-                  {connectionState === 'error' && 'Connection Error'}
-                </span>
-              </div>
-
-              <div className="steps-container">
-                {PIPELINE_STEPS.map((step, index) => {
-                  const status = getStepStatus(step.key);
-                  const update = progressSteps.get(step.key);
-
-                  return (
-                    <div key={step.key} className={`step-item ${status}`}>
-                      <div className="step-indicator">
-                        <div className="step-number">{index + 1}</div>
-                        {status === 'in_progress' && <div className="step-spinner"></div>}
-                        {status === 'completed' && (
-                          <svg className="step-check" viewBox="0 0 20 20" fill="currentColor">
-                            <path
-                              fillRule="evenodd"
-                              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        )}
-                        {status === 'error' && (
-                          <svg className="step-error" viewBox="0 0 20 20" fill="currentColor">
-                            <path
-                              fillRule="evenodd"
-                              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        )}
-                      </div>
-                      <div className="step-content">
-                        <h3 className="step-label">{step.label}</h3>
-                        <p className="step-description">
-                          {update?.message || step.description}
-                        </p>
-                        {update?.progress !== undefined && (
-                          <div className="progress-bar">
-                            <div
-                              className="progress-fill"
-                              style={{ width: `${update.progress}%` }}
-                            ></div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <ProgressTracker
+              connectionStatus={connectionState}
+              steps={progressSteps}
+            />
           )}
 
           {videoUrl && (
-            <div className="video-section">
-              <h2 className="video-title">Your Video is Ready!</h2>
-              <div className="video-wrapper">
-                <video className="video-player" controls src={videoUrl}>
-                  Your browser does not support the video tag.
-                </video>
-              </div>
-              <div className="action-buttons">
-                <a
-                  href={videoUrl}
-                  download
-                  className="download-button"
-                >
-                  Download Video
-                </a>
-                <button
-                  onClick={() => {
-                    setVideoUrl(null);
-                    setTopic('');
-                    setProgressSteps(new Map());
-                    setResumeMode(false);
-                  }}
-                  className="new-video-button"
-                >
-                  Create Another Video
-                </button>
-              </div>
-            </div>
+            <VideoPlayer
+              url={videoUrl}
+              onNewVideo={handleNewVideo}
+            />
           )}
         </main>
 
@@ -383,6 +365,13 @@ function App() {
           <p>Powered by AI • Create unlimited educational videos</p>
         </footer>
       </div>
+
+      <FollowUpQuestionsModal
+        topic={topic}
+        onComplete={handleFollowUpComplete}
+        onSkip={handleFollowUpSkip}
+        isOpen={showFollowUpModal}
+      />
     </div>
   );
 }

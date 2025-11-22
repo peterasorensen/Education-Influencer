@@ -69,12 +69,19 @@ class AudioGenerator:
             self.voice_index += 1
         return self.speaker_voice_map[speaker]
 
-    def _get_audio_sample_for_speaker(self, speaker: str) -> Optional[Path]:
+    def _get_audio_sample_for_speaker(
+        self,
+        speaker: str,
+        speaker_celebrity_map: Optional[Dict[str, str]] = None,
+        celebrity_audio_samples: Optional[Dict[str, Path]] = None
+    ) -> Optional[Path]:
         """
         Map speaker to celebrity audio sample based on speaker name or assigned voice.
 
         Args:
             speaker: Speaker name
+            speaker_celebrity_map: Optional mapping from speaker name to celebrity key
+            celebrity_audio_samples: Optional mapping from celebrity key to audio sample path
 
         Returns:
             Path to audio sample or None if not using Tortoise TTS
@@ -82,14 +89,23 @@ class AudioGenerator:
         if not self.use_tortoise:
             return None
 
-        # Direct name mapping (if speaker is literally "Drake" or "Sydney")
+        # Priority 1: Use speaker-to-celebrity mapping if provided (NEW)
+        if speaker_celebrity_map and celebrity_audio_samples:
+            celeb_key = speaker_celebrity_map.get(speaker)
+            if celeb_key and celeb_key in celebrity_audio_samples:
+                audio_sample = celebrity_audio_samples[celeb_key]
+                if audio_sample:
+                    logger.info(f"Mapped speaker '{speaker}' -> {celeb_key} -> {audio_sample} for voice cloning")
+                    return audio_sample
+
+        # Priority 2: Direct name mapping (if speaker is literally "Drake" or "Sydney")
         speaker_lower = speaker.lower()
         if "drake" in speaker_lower:
             return self.celebrity_audio_samples.get("drake")
         elif "sydney" in speaker_lower:
             return self.celebrity_audio_samples.get("sydney_sweeney")
 
-        # Otherwise, map based on assigned voice
+        # Priority 3: Map based on assigned voice (backward compatibility)
         voice = self._get_voice_for_speaker(speaker)
 
         # Map voices to celebrities (same logic as in main.py)
@@ -105,7 +121,12 @@ class AudioGenerator:
             return self.celebrity_audio_samples.get("drake")
 
     async def generate_audio_segment(
-        self, text: str, speaker: str, output_path: Path
+        self,
+        text: str,
+        speaker: str,
+        output_path: Path,
+        speaker_celebrity_map: Optional[Dict[str, str]] = None,
+        celebrity_audio_samples: Optional[Dict[str, Path]] = None
     ) -> Path:
         """
         Generate audio for a single script segment.
@@ -114,6 +135,8 @@ class AudioGenerator:
             text: The text to convert to speech
             speaker: The speaker name (determines voice)
             output_path: Path to save the audio file
+            speaker_celebrity_map: Optional mapping from speaker name to celebrity key
+            celebrity_audio_samples: Optional mapping from celebrity key to audio sample path
 
         Returns:
             Path to the generated audio file
@@ -121,13 +144,22 @@ class AudioGenerator:
         Raises:
             Exception: If audio generation fails
         """
+        import time
+        segment_start = time.time()
+
         try:
             # Get voice for speaker (assigns voice if not already assigned)
             voice = self._get_voice_for_speaker(speaker)
 
             # Use Tortoise TTS if enabled
             if self.use_tortoise:
-                return await self._generate_tortoise_audio(text, speaker, output_path)
+                result = await self._generate_tortoise_audio(
+                    text, speaker, output_path,
+                    speaker_celebrity_map, celebrity_audio_samples
+                )
+                elapsed = time.time() - segment_start
+                logger.info(f"  ⏱️  Tortoise TTS for '{speaker}' took {elapsed:.2f}s")
+                return result
 
             # Otherwise use OpenAI TTS (default)
             logger.info(f"Generating audio for {speaker} with voice {voice}")
@@ -141,7 +173,8 @@ class AudioGenerator:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             await asyncio.to_thread(response.stream_to_file, str(output_path))
 
-            logger.info(f"Audio saved to {output_path}")
+            elapsed = time.time() - segment_start
+            logger.info(f"  ⏱️  OpenAI TTS for '{speaker}' took {elapsed:.2f}s")
             return output_path
 
         except Exception as e:
@@ -149,7 +182,12 @@ class AudioGenerator:
             raise Exception(f"Audio generation failed for {speaker}: {e}")
 
     async def _generate_tortoise_audio(
-        self, text: str, speaker: str, output_path: Path
+        self,
+        text: str,
+        speaker: str,
+        output_path: Path,
+        speaker_celebrity_map: Optional[Dict[str, str]] = None,
+        celebrity_audio_samples: Optional[Dict[str, Path]] = None
     ) -> Path:
         """
         Generate audio using Tortoise TTS via Replicate.
@@ -158,6 +196,8 @@ class AudioGenerator:
             text: The text to convert to speech
             speaker: The speaker name (determines audio sample)
             output_path: Path to save the audio file
+            speaker_celebrity_map: Optional mapping from speaker name to celebrity key
+            celebrity_audio_samples: Optional mapping from celebrity key to audio sample path
 
         Returns:
             Path to the generated audio file
@@ -167,7 +207,9 @@ class AudioGenerator:
         """
         try:
             # Get audio sample for this speaker
-            audio_sample = self._get_audio_sample_for_speaker(speaker)
+            audio_sample = self._get_audio_sample_for_speaker(
+                speaker, speaker_celebrity_map, celebrity_audio_samples
+            )
 
             if not audio_sample or not audio_sample.exists():
                 logger.warning(f"Audio sample not found for {speaker}, falling back to OpenAI TTS")
@@ -305,6 +347,8 @@ class AudioGenerator:
         final_output_path: Path,
         silence_duration_ms: int = 500,
         progress_callback: Optional[Callable[[str, int], None]] = None,
+        speaker_celebrity_map: Optional[Dict[str, str]] = None,
+        celebrity_audio_samples: Optional[Dict[str, Path]] = None,
     ) -> Path:
         """
         Generate audio for the complete script with all speakers.
@@ -315,6 +359,8 @@ class AudioGenerator:
             final_output_path: Path for the final combined audio file
             silence_duration_ms: Duration of silence between segments in milliseconds
             progress_callback: Optional callback for progress updates
+            speaker_celebrity_map: Optional mapping from speaker name to celebrity key
+            celebrity_audio_samples: Optional mapping from celebrity key to audio sample path
 
         Returns:
             Path to the final combined audio file
@@ -327,25 +373,55 @@ class AudioGenerator:
                 progress_callback("Starting audio generation...", 20)
 
             output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Prepare all segment generation tasks with staggered starts
+            total_segments = len(script)
+            segment_tasks = []
             segment_files = []
 
-            # Generate audio for each segment
-            total_segments = len(script)
+            async def staggered_generation(delay: float, text: str, speaker: str, segment_path: Path):
+                """Helper to stagger API calls by adding initial delay"""
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                return await self.generate_audio_segment(
+                    text, speaker, segment_path,
+                    speaker_celebrity_map, celebrity_audio_samples
+                )
+
             for idx, segment in enumerate(script):
                 speaker = segment["speaker"]
                 text = segment["text"]
-
-                if progress_callback:
-                    progress = 20 + int((idx / total_segments) * 20)
-                    progress_callback(
-                        f"Generating audio for {speaker} ({idx + 1}/{total_segments})...",
-                        progress,
-                    )
-
-                # Generate audio segment
                 segment_path = output_dir / f"segment_{idx:03d}_{speaker}.mp3"
-                await self.generate_audio_segment(text, speaker, segment_path)
                 segment_files.append(segment_path)
+
+                # Create task with 3-second stagger between each call
+                stagger_delay = idx * 3.0  # 0s, 3s, 6s, 9s, ...
+                segment_tasks.append(
+                    staggered_generation(stagger_delay, text, speaker, segment_path)
+                )
+
+            if progress_callback:
+                progress_callback(
+                    f"Generating {total_segments} audio segments (staggered by 3s)...",
+                    20,
+                )
+
+            # Log API call count with stagger info
+            logger.info(f"⚡ Starting {total_segments} STAGGERED API calls to {'Tortoise TTS (Replicate)' if self.use_tortoise else 'OpenAI TTS'}")
+            logger.info(f"   Stagger: 3-second delay between each call (0s, 3s, 6s, ...)")
+            logger.info(f"   Total stagger time: {(total_segments - 1) * 3}s across {total_segments} segments")
+            import time
+            start_time = time.time()
+
+            # Generate all audio segments in parallel (with staggered starts)
+            try:
+                await asyncio.gather(*segment_tasks)
+                elapsed = time.time() - start_time
+                logger.info(f"✅ Completed {total_segments} staggered API calls in {elapsed:.2f} seconds")
+                logger.info(f"   Average time per call (excluding stagger): {(elapsed - (total_segments - 1) * 3) / total_segments:.2f}s")
+            except Exception as e:
+                logger.error(f"Error during parallel audio generation: {e}")
+                raise
 
             if progress_callback:
                 progress_callback("Combining audio segments...", 40)

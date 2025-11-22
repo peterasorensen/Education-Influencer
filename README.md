@@ -4,6 +4,7 @@ An AI-powered web application that automatically generates engaging 1-minute edu
 
 ## Features
 
+### Video Generation AI
 - **AI Script Generation**: GPT-4o creates conversational, catchy scripts with multiple voices (boy and girl characters)
 - **Text-to-Speech**: OpenAI's TTS models generate natural-sounding audio with distinct voices per character
 - **Precision Timestamps**: Whisper extracts word-level timing for perfect synchronization
@@ -11,6 +12,18 @@ An AI-powered web application that automatically generates engaging 1-minute edu
 - **Self-Healing Pipeline**: Automatically fixes Manim code errors with retry logic
 - **Real-Time Progress**: WebSocket updates show pipeline progress in the UI
 - **Modern UI**: Clean, gradient-based interface with smooth animations
+
+### 🎬 NEW: Professional Video Editor
+- **Screen Recording**: Capture display, window, or custom area with microphone support
+- **Multi-Track Editing**: Unlimited video and audio tracks with drag & drop
+- **Smart Zoom Effects**: Auto-follow cursor or manually set zoom points (1.0x-2.0x)
+- **Professional Export**: MP4/WebM with quality presets using FFmpeg.wasm
+- **Timeline Tools**: Trim, split, move clips with undo/redo support
+- **Media Library**: Import videos, audio, images with auto-generated thumbnails
+- **Browser-Based**: No server required, runs entirely in your browser
+
+👉 **[Video Editor Quick Start Guide](frontend/QUICK_START.md)**
+👉 **[Complete Video Editor Documentation](frontend/VIDEO_EDITOR_README.md)**
 
 ## Pipeline Architecture
 
@@ -39,11 +52,18 @@ educational-influencer/
 │   └── requirements.txt
 ├── frontend/            # React + TypeScript UI
 │   ├── src/
-│   │   ├── App.tsx     # Main component
-│   │   ├── App.css     # Vanilla CSS styling
-│   │   └── types.ts    # TypeScript types
+│   │   ├── App.tsx              # Main video generation app
+│   │   ├── video-editor/        # 🎬 NEW: Professional video editor
+│   │   │   ├── components/      # Editor UI components
+│   │   │   ├── store/           # Zustand state management
+│   │   │   ├── theme/           # Design system
+│   │   │   └── hooks/           # Recording & editing hooks
+│   │   └── types.ts
+│   ├── video-editor.html        # Video editor entry point
+│   ├── QUICK_START.md          # Video editor quick start
+│   ├── VIDEO_EDITOR_README.md  # Full editor documentation
 │   └── package.json
-└── README.md           # This file
+└── README.md                    # This file
 ```
 
 ## Quick Start

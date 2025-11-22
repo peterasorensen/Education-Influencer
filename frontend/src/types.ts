@@ -19,6 +19,7 @@ export interface ProgressUpdate {
 
 export interface VideoGenerationRequest {
   topic: string;
+  renderer?: 'manim' | 'remotion'; // Animation renderer (default: manim)
 }
 
 export interface VideoGenerationResponse {
