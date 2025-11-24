@@ -649,17 +649,13 @@ FAILED CODE:
 {broken_code}
 ```
 
-This is attempt {attempt + 1}/3. Please analyze the error carefully and fix the code.
+This is attempt {attempt + 1}/3. Analyze the error and fix the code.
 
-CRITICAL DEBUGGING TIPS FOR THIS ERROR:
-- If IndexError "list index out of range": You're accessing MathTex/VGroup submobjects that don't exist (e.g., eq[0], eq[2]). MathTex doesn't always split into predictable submobjects! FIXES: (1) Use whole object: Indicate(eq) instead of Indicate(eq[0]), OR (2) Don't access by index at all - just animate the whole object, OR (3) Use Create/FadeIn instead of trying to access parts.
-- If error mentions object after active_objects.clear(): You removed an object then tried to use it! NEVER use ReplacementTransform(old_obj, new_obj) after removing old_obj. FIX: Either don't remove the old object before transform, OR just use Create(new_obj) instead of transforming.
-- If ValueError "could not broadcast input array": This is caused by accessing submobjects after Transform. NEVER use indexing after Transform (e.g., obj[0], obj[2]). Instead: (1) Use ReplacementTransform instead of Transform, OR (2) Create a new object instead of transforming, OR (3) Don't index into transformed objects.
-- If NameError: You used a deprecated/non-existent function. Check the system prompt for replacements (ShowCreation→Create, GrowArrow→Create, etc).
-- If TypeError with 'stretch': Remove the stretch parameter from set_width/set_height. Use .scale_to_fit_width() instead.
-- If AttributeError: The method doesn't exist. Use basic Manim methods only.
-
-SIMPLEST FIX FOR MOST ERRORS: Don't use indexing (obj[0], obj[2]) or Transform at all. Just use Create, FadeIn, FadeOut on whole objects!
+Key reminders:
+- Subtitles handle narration - don't create Text() for dialogue/explanations
+- Only use MathTex for equations, Text for short 1-3 word labels
+- Don't use object indexing (obj[0], obj[2]) - animate whole objects instead
+- Use Create/FadeIn/FadeOut instead of Transform to avoid issues
 
 Return ONLY the fixed Python code, no explanations."""
 
