@@ -15,7 +15,7 @@ import os
 import uuid
 import json
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, UploadFile, File, Form
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, UploadFile, File, Form, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -36,6 +36,9 @@ from pipeline import (
     VideoStitcher,
     ResumeDetector,
     CelebrityLoader,  # NEW - Dynamic celebrity loading
+    CharacterProfileGenerator,  # NEW - Character personalities
+    CharacterContext,
+    VisualContext,  # NEW - Visual continuity
 )
 
 # Media upload modules
@@ -47,10 +50,13 @@ from models.media_models import PhotoMetadata, AudioMetadata
 # Load environment variables from .env file
 load_dotenv()
 
-# Configure logging
+# Configure logging to stdout
+import sys
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+    force=True
 )
 logger = logging.getLogger(__name__)
 
@@ -490,6 +496,10 @@ async def generate_video_pipeline(
     custom_audio_id: Optional[str] = None,
     user_id: str = "default",
     celebrities: Optional[List[Dict[str, Any]]] = None,
+    script_model: str = "gpt-4o",
+    audio_model: str = "openai-tts",
+    lipsync_model: str = "tmappdev",
+    video_model: str = "seedance",
 ):
     """
     Main video generation pipeline with celebrity lip-sync.
@@ -512,6 +522,15 @@ async def generate_video_pipeline(
                      Each dict: {mode, name, photo_id, audio_id, user_id}
     """
     try:
+        # Log all model parameters for debugging
+        logger.info(f"=== Pipeline started for job {job_id} ===")
+        logger.info(f"  Topic: {topic}")
+        logger.info(f"  Script Model: {script_model}")
+        logger.info(f"  Audio Model (raw): {audio_model}")
+        logger.info(f"  Video Model: {video_model}")
+        logger.info(f"  Lipsync Model: {lipsync_model}")
+        logger.info(f"  Renderer: {renderer}")
+
         # Wait for WebSocket connection before starting
         logger.info(f"Waiting for WebSocket connection for job {job_id}")
         max_wait_time = 30  # Wait up to 30 seconds for WebSocket connection
@@ -547,6 +566,35 @@ async def generate_video_pipeline(
 
             logger.info(resume_detector.get_summary())
             logger.info(f"Resuming from: {resume_point}")
+
+            # Restore job metadata (celebrities, models, etc.)
+            metadata_path = job_dir / "job_metadata.json"
+            if metadata_path.exists():
+                try:
+                    saved_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+                    # Restore celebrities if not provided in resume request
+                    if celebrities is None or len(celebrities) == 0:
+                        celebrities = saved_metadata.get("celebrities", [])
+                        logger.info(f"Restored {len(celebrities)} celebrities from saved metadata")
+                        for idx, celeb in enumerate(celebrities):
+                            logger.info(f"  Celebrity {idx}: {celeb}")
+
+                    # Restore models if not provided
+                    if script_model == "gpt-4o" and "script_model" in saved_metadata:
+                        script_model = saved_metadata["script_model"]
+                    if audio_model == "openai-tts" and "audio_model" in saved_metadata:
+                        audio_model = saved_metadata["audio_model"]
+                    if video_model == "seedance" and "video_model" in saved_metadata:
+                        video_model = saved_metadata["video_model"]
+                    if lipsync_model == "tmappdev" and "lipsync_model" in saved_metadata:
+                        lipsync_model = saved_metadata["lipsync_model"]
+                    if renderer == "manim" and "renderer" in saved_metadata:
+                        renderer = saved_metadata["renderer"]
+
+                    logger.info("Restored job configuration from metadata")
+                except Exception as e:
+                    logger.warning(f"Failed to load job metadata: {e}")
 
             # Send resume summary to user
             await send_progress_update(
@@ -601,9 +649,16 @@ async def generate_video_pipeline(
             if celeb_config.get("mode") == "preset":
                 # Use preset celebrity
                 preset_name = celeb_config.get("name", "drake")
-                celebrity_images_map[celeb_key] = CELEBRITY_IMAGES.get(preset_name, CELEBRITY_IMAGES["drake"])
-                celebrity_audio_map[celeb_key] = CELEBRITY_AUDIO_SAMPLES.get(preset_name)
-                logger.info(f"Mapped {celeb_key} to preset '{preset_name}'")
+
+                # Normalize preset name to match celebrity loader keys (which uses folder names)
+                # Celebrity loader uses lowercase folder names like "goku", "vegeta", "drake", etc.
+                preset_name_normalized = preset_name.lower().replace(" ", "_")
+
+                celebrity_images_map[celeb_key] = CELEBRITY_IMAGES.get(preset_name_normalized, CELEBRITY_IMAGES.get("drake"))
+                celebrity_audio_map[celeb_key] = CELEBRITY_AUDIO_SAMPLES.get(preset_name_normalized)
+                logger.info(f"Mapped {celeb_key} to preset '{preset_name}' (normalized: '{preset_name_normalized}')")
+                logger.info(f"  Image: {celebrity_images_map[celeb_key]}")
+                logger.info(f"  Audio: {celebrity_audio_map[celeb_key]}")
             else:
                 # Use custom upload
                 celeb_user_id = celeb_config.get("user_id", user_id)
@@ -625,16 +680,103 @@ async def generate_video_pipeline(
                             celebrity_audio_map[celeb_key] = custom_audio_path
                             logger.info(f"Mapped {celeb_key} to custom audio: {custom_audio_path}")
 
+        # Save job metadata for resume functionality
+        if not resume_mode:
+            metadata_path = job_dir / "job_metadata.json"
+            job_metadata = {
+                "job_id": job_id,
+                "topic": topic,
+                "duration_seconds": duration_seconds,
+                "celebrities": celebrities,
+                "script_model": script_model,
+                "audio_model": audio_model,
+                "video_model": video_model,
+                "lipsync_model": lipsync_model,
+                "renderer": renderer,
+                "quality": quality,
+                "enable_subtitles": enable_subtitles,
+                "user_id": user_id,
+            }
+            metadata_path.write_text(json.dumps(job_metadata, indent=2), encoding="utf-8")
+            logger.info(f"Saved job metadata to {metadata_path}")
+
+        # STEP 1/9: Generate customized character images with Nano Banana (if prompts provided)
+        if not completed_steps.get("nano_banana") and not resume_mode:
+            nano_banana_dir = job_dir / "nano_banana_images"
+            nano_banana_dir.mkdir(exist_ok=True)
+
+            # Check if any celebrity has a nano_banana_prompt
+            has_nano_banana_prompts = any(
+                celeb.get("nano_banana_prompt") for celeb in celebrities
+            )
+
+            if has_nano_banana_prompts:
+                await send_progress_update(job_id, "Generating custom character images...", 2)
+                logger.info("🎨 Step 1/9: Generating customized character images with Nano Banana")
+
+                from pipeline import NanoBananaGenerator
+                nano_gen = NanoBananaGenerator(REPLICATE_API_TOKEN)
+
+                for celeb_idx, celeb_config in enumerate(celebrities):
+                    celeb_key = f"celebrity_{celeb_idx}"
+                    nano_prompt = celeb_config.get("nano_banana_prompt")
+
+                    if nano_prompt:
+                        logger.info(f"Generating custom image for {celeb_key} with prompt: '{nano_prompt}'")
+
+                        # Get the original image path
+                        original_image = celebrity_images_map.get(celeb_key)
+                        if not original_image or not original_image.exists():
+                            logger.warning(f"Original image not found for {celeb_key}, skipping Nano Banana")
+                            continue
+
+                        # Generate customized image
+                        output_image = nano_banana_dir / f"{celeb_key}_custom.jpg"
+
+                        try:
+                            generated_image = await nano_gen.generate_image(
+                                prompt=nano_prompt,
+                                input_image_path=original_image,
+                                output_path=output_image,
+                                aspect_ratio="9:16",  # Vertical format for videos
+                                output_format="jpg",
+                            )
+
+                            # Replace the celebrity image with the generated one
+                            celebrity_images_map[celeb_key] = generated_image
+                            logger.info(f"✅ Generated custom image for {celeb_key}: {generated_image}")
+
+                        except Exception as e:
+                            logger.error(f"Failed to generate Nano Banana image for {celeb_key}: {e}")
+                            logger.info(f"Continuing with original image for {celeb_key}")
+
+                logger.info("✅ Custom character images generated")
+            else:
+                logger.info("No Nano Banana prompts provided, skipping custom image generation")
+
         # Initialize pipeline modules with user-selected models
         script_gen = ScriptGenerator(OPENAI_API_KEY, model=script_model)
 
         # Map audio_model string to actual model identifier
         audio_model_map = {
             "openai-tts": None,  # None means use OpenAI TTS (default)
-            "tortoise-tts": "lucataco/tortoise-tts:latest",
-            "minimax-voice-cloning": "minimax/voice-cloning"
+            "tortoise-tts": "ttsds/tortoise:274f7fd0812bba7717154110a0ffd2930db847135ab234e23a9d7c35924b8a09",
+            "minimax-voice-cloning": "minimax/speech-2.6-hd"  # MiniMax uses speech-2.6-hd for generation
         }
-        actual_audio_model = audio_model_map.get(audio_model)
+
+        # Check if audio_model is valid
+        if audio_model not in audio_model_map:
+            logger.warning(f"⚠️  Unknown audio_model '{audio_model}', defaulting to OpenAI TTS")
+            logger.warning(f"    Valid options: {list(audio_model_map.keys())}")
+            actual_audio_model = None
+        else:
+            actual_audio_model = audio_model_map[audio_model]
+
+        logger.info(f"=== Audio Model Mapping ===")
+        logger.info(f"  Received audio_model: '{audio_model}'")
+        logger.info(f"  Mapped to actual_audio_model: '{actual_audio_model}'")
+        logger.info(f"  Is None (OpenAI TTS): {actual_audio_model is None}")
+        logger.info(f"  Contains 'tortoise': {'tortoise' in actual_audio_model.lower() if actual_audio_model else False}")
 
         audio_gen = AudioGenerator(
             api_key=OPENAI_API_KEY,
@@ -702,11 +844,53 @@ async def generate_video_pipeline(
                     "student": "Speaker 2"
                 }
 
+            # Generate character profiles for authentic dialogue
+            logger.info("🎭 Generating character profiles for authentic personalities...")
+            character_context = None
+            try:
+                char_prof_gen = CharacterProfileGenerator(OPENAI_API_KEY)
+
+                # Generate profiles for teacher and student
+                teacher_profile = await char_prof_gen.generate_character_profile(
+                    character_name=speaker_names["teacher"],
+                    role="teacher",
+                    topic=topic
+                )
+                logger.info(f"✅ Generated teacher profile for {speaker_names['teacher']}")
+
+                student_profile = await char_prof_gen.generate_character_profile(
+                    character_name=speaker_names["student"],
+                    role="student",
+                    topic=topic
+                )
+                logger.info(f"✅ Generated student profile for {speaker_names['student']}")
+
+                # Generate relationship dynamics
+                relationship = await char_prof_gen.generate_relationship(
+                    char1_name=speaker_names["teacher"],
+                    char2_name=speaker_names["student"],
+                    char1_profile=teacher_profile,
+                    char2_profile=student_profile
+                )
+                logger.info(f"✅ Generated relationship: {relationship.relationship_type}")
+
+                # Create character context
+                character_context = CharacterContext(
+                    characters=[teacher_profile, student_profile],
+                    relationship=relationship
+                )
+                logger.info("✅ Character context ready - dialogue will be character-authentic")
+
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to generate character profiles: {e}. Using generic characters.")
+                character_context = None
+
             script = await script_gen.generate_script(
                 topic=topic,
                 duration_seconds=duration_seconds,
                 speaker_names=speaker_names,
                 refined_context=refined_context,
+                character_context=character_context,  # NEW - Inject character personalities
                 progress_callback=lambda msg, prog: asyncio.create_task(
                     send_progress_update(job_id, msg, prog)
                 ),
@@ -812,12 +996,18 @@ async def generate_video_pipeline(
             await send_progress_update(job_id, "Visual instructions loaded from cache (legacy)", 47)
             storyboard = None  # Using legacy system
         else:
-            # Generate new storyboard
+            # Initialize visual context for progressive diagram building
+            logger.info("🎨 Initializing visual context for scene continuity...")
+            visual_context = VisualContext(topic=topic)
+            logger.info("✅ Visual context initialized - scenes will build upon each other")
+
+            # Generate new storyboard with visual context
             await send_progress_update(job_id, "Generating storyboard with spatial tracking...", 45)
             storyboard = await storyboard_gen.generate_storyboard(
                 script=script,
                 topic=topic,
                 aligned_timestamps=aligned_script,
+                visual_context=visual_context,  # NEW - Enable scene continuity
                 progress_callback=lambda msg, prog: asyncio.create_task(
                     send_progress_update(job_id, msg, prog)
                 ),
@@ -1446,6 +1636,15 @@ async def generate_video(
         Job information including job_id for tracking progress
     """
     try:
+        # Log received request parameters
+        logger.info(f"=== Received video generation request ===")
+        logger.info(f"  Topic: {request.topic}")
+        logger.info(f"  Script Model: {request.script_model}")
+        logger.info(f"  Audio Model: {request.audio_model}")
+        logger.info(f"  Video Model: {request.video_model}")
+        logger.info(f"  Lipsync Model: {request.lipsync_model}")
+        logger.info(f"  Renderer: {request.renderer}")
+
         # Validate API key
         if not OPENAI_API_KEY:
             raise HTTPException(
@@ -1491,6 +1690,10 @@ async def generate_video(
             custom_audio_id=request.custom_audio_id,
             user_id=request.user_id,
             celebrities=request.celebrities,
+            script_model=request.script_model,
+            audio_model=request.audio_model,
+            lipsync_model=request.lipsync_model,
+            video_model=request.video_model,
         )
 
         logger.info(f"Video generation job created: {job_id}")
@@ -1531,28 +1734,108 @@ async def get_job_status(job_id: str):
     )
 
 
+@app.options("/api/videos/{job_id}/{filename}")
+async def video_options(job_id: str, filename: str):
+    """Handle OPTIONS preflight requests for video endpoint."""
+    from fastapi.responses import Response
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+            "Access-Control-Allow-Headers": "Range, Content-Type",
+            "Access-Control-Max-Age": "86400",
+        }
+    )
+
+
 @app.get("/api/videos/{job_id}/{filename}")
-async def get_video(job_id: str, filename: str):
+async def get_video(job_id: str, filename: str, request: Request):
     """
-    Download generated video.
+    Stream generated video with Range request support.
 
     Args:
         job_id: Job identifier
         filename: Video filename
+        request: FastAPI request object
 
     Returns:
-        Video file
+        Video file with Range support for HTML5 players
     """
+    from fastapi.responses import StreamingResponse
+    import os
+
     video_path = BASE_OUTPUT_DIR / job_id / filename
 
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Video not found")
 
-    return FileResponse(
-        path=video_path,
-        media_type="video/mp4",
-        filename=f"{job_id}_{filename}",
-    )
+    # Get file size
+    file_size = os.path.getsize(video_path)
+
+    # Parse Range header
+    range_header = request.headers.get("Range")
+
+    if range_header:
+        # Parse range like "bytes=0-1023"
+        range_match = range_header.replace("bytes=", "").split("-")
+        start = int(range_match[0]) if range_match[0] else 0
+        end = int(range_match[1]) if len(range_match) > 1 and range_match[1] else file_size - 1
+
+        # Ensure end doesn't exceed file size
+        end = min(end, file_size - 1)
+        chunk_size = end - start + 1
+
+        def ranged_file_iterator():
+            with open(video_path, "rb") as video_file:
+                video_file.seek(start)
+                remaining = chunk_size
+                while remaining > 0:
+                    chunk = video_file.read(min(8192, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(chunk_size),
+            "Content-Type": "video/mp4",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+            "Access-Control-Allow-Headers": "Range",
+            "Cross-Origin-Resource-Policy": "cross-origin",
+        }
+
+        return StreamingResponse(
+            ranged_file_iterator(),
+            status_code=206,  # Partial Content
+            headers=headers,
+            media_type="video/mp4"
+        )
+    else:
+        # No range requested, send full file
+        def file_iterator():
+            with open(video_path, "rb") as video_file:
+                while chunk := video_file.read(8192):
+                    yield chunk
+
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+            "Content-Type": "video/mp4",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+            "Access-Control-Allow-Headers": "Range",
+            "Cross-Origin-Resource-Policy": "cross-origin",
+        }
+
+        return StreamingResponse(
+            file_iterator(),
+            headers=headers,
+            media_type="video/mp4"
+        )
 
 
 @app.get("/api/celebrities")

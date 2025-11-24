@@ -165,12 +165,18 @@ import React from 'react';
 import { AbsoluteFill, Composition, useCurrentFrame, useVideoConfig, interpolate, spring, Easing, registerRoot } from 'remotion';
 
 // EQUATION COMPONENT - For math formulas
-const Equation: React.FC<{text: string; x: number; y: number; startFrame: number; size?: number}> = ({text, x, y, startFrame, size = 48}) => {
+const Equation: React.FC<{text: string; x: number; y: number; startFrame: number; endFrame: number; size?: number}> = ({text, x, y, startFrame, endFrame, size = 48}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
   const scale = spring({frame: frame - startFrame, fps, config: {damping: 15}});
-  const opacity = interpolate(frame, [startFrame, startFrame + 15], [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  // Fade in at start, fade out at end
+  const opacity = interpolate(
+    frame,
+    [startFrame, startFrame + 15, endFrame - 15, endFrame],
+    [0, 1, 1, 0],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}
+  );
 
   return (
     <div style={{position: 'absolute', left: x, top: y, transform: `scale(${scale})`, opacity}}>
@@ -283,22 +289,34 @@ const EducationalScene: React.FC = () => {
   return (
     <AbsoluteFill style={{background: 'linear-gradient(135deg, #0a0a1a 0%, #1a0a2a 100%)'}}>
 
-      {/* EXAMPLE: Render visual instructions as components
+      {/* EXAMPLE: Render visual instructions with CLEANUP (no overlaps)
 
-      For visual_type="equation":
-      <Equation text="E = mc²" x={400} y={200} startFrame={0} size={64} />
+      Scene 1: frames 0-150
+      {frame >= 0 && frame < 150 && (
+        <>
+          <Equation text="E = mc²" x={400} y={200} startFrame={0} endFrame={150} size={64} />
+        </>
+      )}
 
-      For visual_type="diagram":
-      <Box text="Input" x={100} y={300} width={150} height={80} startFrame={30} />
-      <Arrow x1={250} y1={340} x2={400} y2={340} startFrame={60} />
-      <Box text="Output" x={400} y={300} width={150} height={80} startFrame={90} />
+      Scene 2: frames 150-300 (Scene 1 is GONE)
+      {frame >= 150 && frame < 300 && (
+        <>
+          <Box text="Input" x={100} y={300} width={150} height={80} startFrame={150} />
+          <Arrow x1={250} y1={340} x2={400} y2={340} startFrame={180} />
+          <Box text="Output" x={400} y={300} width={150} height={80} startFrame={210} />
+        </>
+      )}
 
-      For visual_type="graph":
-      <GraphAxes startFrame={0} />
-      <PlotCurve points={[{x:150,y:700}, {x:250,y:600}, {x:350,y:500}]} startFrame={40} />
-
-      For visual_type="shape":
-      <Shape type="circle" x={400} y={400} size={120} startFrame={0} color="#00d4ff" />
+      Scene 3: frames 300-450 (builds on Scene 2 - keep boxes)
+      {frame >= 150 && frame < 450 && (
+        <>
+          <Box text="Input" x={100} y={300} width={150} height={80} startFrame={150} />
+          <Box text="Output" x={400} y={300} width={150} height={80} startFrame={210} />
+        </>
+      )}
+      {frame >= 300 && frame < 450 && (
+        <GraphAxes startFrame={300} />
+      )}
 
       */}
 
@@ -306,33 +324,57 @@ const EducationalScene: React.FC = () => {
   );
 };
 
-const RemotionRoot: React.FC = () => (
+export const RemotionRoot: React.FC = () => (
   <Composition id="EducationalScene" component={EducationalScene} durationInFrames={1800} fps={30} width={1080} height={960} />
 );
 
 registerRoot(RemotionRoot);
 ```
 
+CRITICAL - SCENE CLEANUP (PREVENT OVERLAPS):
+- EACH scene must ONLY show content for its time range
+- Use conditional rendering: {frame >= startFrame && frame <= endFrame && <Component />}
+- Calculate endFrame = nextScene.startFrame OR totalDuration
+- OLD content MUST disappear when NEW content starts
+- Example WRONG (overlap):
+  <Equation text="E=mc²" x={540} y={300} startFrame={0} />
+  <Equation text="F=ma" x={540} y={300} startFrame={120} />  // BOTH VISIBLE AT 120!
+- Example CORRECT (no overlap):
+  {frame >= 0 && frame < 120 && <Equation text="E=mc²" x={540} y={300} startFrame={0} />}
+  {frame >= 120 && <Equation text="F=ma" x={540} y={300} startFrame={120} />}
+
 TIMING:
 - startFrame = timestamp.start * 30
+- endFrame = timestamp.end * 30 (use cleanup array to determine when to hide)
 - Fade: interpolate(frame, [start, start+20], [0,1], {extrapolateLeft:'clamp'})
 - Spring: spring({frame: frame-start, fps, config: {damping:12}})
-- Show if: {frame >= startFrame && frame <= endFrame && <Component />}
+- MANDATORY: {frame >= startFrame && frame <= endFrame && <Component />}
 
 LAYOUT (1080x960):
 - Center X: 540
 - Y zones: top(100-200), center(300-600), bottom(700-850)
 - Position: position:'absolute', left:X, top:Y
+- NEVER place multiple items at same X,Y coordinates
+- If scene builds on previous, keep old elements visible with frame ranges
+- If scene is NEW content, hide ALL old elements
 
 STYLING:
 - Colors: #00d4ff, #00ff88, #ff00ff
 - Background: linear-gradient(135deg, #0a0a1a, #1a0a2a)
 - Inline styles only
 
-CRITICAL:
-- MUST end with: registerRoot(RemotionRoot);
-- Component name: EducationalScene
-- Return ONLY TypeScript code."""
+CRITICAL STRUCTURE (REQUIRED):
+1. Import React and Remotion components
+2. Define helper components (Equation, Box, etc.)
+3. Define EducationalScene component
+4. EXPORT RemotionRoot: export const RemotionRoot: React.FC = () => (...)
+5. CALL registerRoot: registerRoot(RemotionRoot);
+
+MUST include both:
+- export const RemotionRoot: React.FC = () => (...)
+- registerRoot(RemotionRoot);
+
+Return ONLY TypeScript code, no explanations."""
 
         # Format instructions
         instructions_with_timing = []
@@ -380,19 +422,53 @@ VISUAL SCENES TO RENDER:
 
 YOUR JOB: Render visuals that TEACH the concept based on the script above.
 
-RENDER BY visual_type:
-- "equation" → <Equation text="actual formula" x={{540}} y={{300}} startFrame={{...}} />
-- "diagram" → <Box text="Label1" .../> + <Arrow .../> + <Box text="Label2" .../>
-- "graph" → <GraphAxes .../> + <PlotCurve points={{actual data}} .../>
-- "shape" → <Shape type="circle" ... /> (with measurements if needed)
+CRITICAL - PREVENT CONTENT OVERLAP:
+For EACH scene in the JSON:
+1. Calculate startFrame = scene.timestamp.start * 30
+2. Calculate endFrame = next_scene.timestamp.start * 30 (OR {duration_frames} if last scene)
+3. Wrap ALL components in: {{frame >= startFrame && frame < endFrame && <Component />}}
+4. Check "cleanup" field - if it lists elements, those should NOT appear in this scene
+5. Check "builds_on" field - if it references previous scene, keep those elements visible
+
+EXAMPLE - TWO SCENES WITH PROPER CLEANUP:
+Scene 1: start=0s, end=5s (when scene 2 starts)
+Scene 2: start=5s, end=10s
+
+{{/* Scene 1: 0-5 seconds (frames 0-150) */}}
+{{frame >= 0 && frame < 150 && (
+  <>
+    <Equation text="E = mc²" x={{540}} y={{300}} startFrame={{0}} />
+  </>
+)}}
+
+{{/* Scene 2: 5-10 seconds (frames 150-300) - Scene 1 is GONE */}}
+{{frame >= 150 && frame < 300 && (
+  <>
+    <Equation text="F = ma" x={{540}} y={{300}} startFrame={{150}} />
+  </>
+)}}
+
+RENDER BY visual_type (with proper cleanup):
+- "equation" → {{frame >= start && frame < end && <Equation text="formula" x={{540}} y={{300}} startFrame={{start}} endFrame={{end}} />}}
+- "diagram" → {{frame >= start && frame < end && (<><Box .../><Arrow .../><Box .../></>)}}
+- "graph" → {{frame >= start && frame < end && (<><GraphAxes .../><PlotCurve .../></>)}}
+- "shape" → {{frame >= start && frame < end && <Shape type="circle" ... />}}
 
 Use scene.description to understand WHAT to render (it's specific to this topic!)
 Text ONLY for: equations, labels, axes, measurements (NOT narration - subtitles do that)
 
-CRITICAL:
+CRITICAL CHECKLIST FOR EACH SCENE:
+✓ Wrapped in {{frame >= X && frame < Y && ...}}
+✓ endFrame = next scene's startFrame
+✓ No overlapping coordinates if not building on previous
+✓ Elements in "cleanup" are NOT rendered
+
+CRITICAL REQUIREMENTS:
 - startFrame = timestamp.start * 30
+- endFrame = next timestamp.start * 30
 - durationInFrames = {duration_frames}
-- END WITH: registerRoot(RemotionRoot);"""
+- MUST EXPORT: export const RemotionRoot: React.FC = () => (...)
+- MUST END WITH: registerRoot(RemotionRoot);"""
 
         logger.info("Generating initial Remotion code")
 
@@ -441,14 +517,28 @@ This is attempt {attempt + 1}/3. Please analyze the error carefully and fix the 
 
 CRITICAL DEBUGGING TIPS:
 - If validation error about missing imports: Ensure you import all used components from 'remotion'
+- If "Missing export" error: You MUST export RemotionRoot: export const RemotionRoot: React.FC = () => ...
 - If "Missing registerRoot()" error: You MUST call registerRoot(RemotionRoot) at the end of the file
+- If React error #130 (invalid element type): Component is undefined - check all components are defined before use
 - If syntax errors: Check all JSX tags are properly closed
 - If type errors: Ensure TypeScript types are correct
 - Make sure durationInFrames is set to a NUMBER not a variable name
 - Ensure all React hooks (useCurrentFrame, useVideoConfig) are imported from 'remotion'
 
+CONTENT OVERLAP FIX (VERY COMMON ISSUE):
+If content is rendering on top of each other, you MUST use frame-based conditional rendering:
+- BAD: <Equation startFrame={{0}} /> <Equation startFrame={{150}} />  // Both visible at frame 150!
+- GOOD: {{frame >= 0 && frame < 150 && <Equation startFrame={{0}} />}}
+         {{frame >= 150 && frame < 300 && <Equation startFrame={{150}} />}}
+
+For EACH scene, wrap content in: {{frame >= sceneStart && frame < sceneEnd && (<>...</>)}}
+
 REQUIRED AT END OF FILE (Remotion 4.x):
 ```tsx
+export const RemotionRoot: React.FC = () => (
+  <Composition id="EducationalScene" component={EducationalScene} durationInFrames={XXXX} fps={30} width={1080} height={960} />
+);
+
 registerRoot(RemotionRoot);
 ```
 
@@ -512,17 +602,17 @@ Return ONLY the complete fixed TypeScript/React code, no explanations."""
             if "from 'remotion'" not in code_content and 'from "remotion"' not in code_content:
                 return False, "Missing Remotion imports"
 
-            # Check for required exports
+            # Check for export (needed for component resolution)
             if "export" not in code_content:
-                return False, "Missing export statement"
-
-            # Check for Composition
-            if "Composition" not in code_content:
-                return False, "Missing Composition component"
+                return False, "Missing export statement (export const RemotionRoot)"
 
             # Check for registerRoot (REQUIRED for Remotion 4.x)
             if "registerRoot" not in code_content:
                 return False, "Missing registerRoot() call - REQUIRED for Remotion 4.x"
+
+            # Check for Composition
+            if "Composition" not in code_content:
+                return False, "Missing Composition component"
 
             # Check for AbsoluteFill
             if "AbsoluteFill" not in code_content:

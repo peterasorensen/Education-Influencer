@@ -49,6 +49,11 @@ function App() {
   ]);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // Log when audio model changes
+  useEffect(() => {
+    console.log('Audio model state changed to:', audioModel);
+  }, [audioModel]);
+
   // Cleanup WebSocket on unmount
   useEffect(() => {
     return () => {
@@ -110,6 +115,16 @@ function App() {
       // Send POST request to backend
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+      // Transform celebrities to match backend snake_case format
+      const transformedCelebrities = celebrities.map(celeb => ({
+        mode: celeb.mode,
+        name: celeb.name,
+        photoId: celeb.photoId,
+        audioId: celeb.audioId,
+        userId: celeb.userId,
+        nano_banana_prompt: celeb.nanoBananaPrompt // Convert camelCase to snake_case
+      }));
+
       const requestBody: any = resumeJobId
         ? { topic: topicText, resume_job_id: resumeJobId, renderer, script_model: scriptModel, audio_model: audioModel, video_model: videoModel, lipsync_model: lipsyncModel }
         : {
@@ -120,8 +135,15 @@ function App() {
             video_model: videoModel,
             lipsync_model: lipsyncModel,
             refined_context: context,
-            celebrities
+            celebrities: transformedCelebrities
           };
+
+      console.log('=== Sending video generation request ===');
+      console.log('Script Model:', scriptModel);
+      console.log('Audio Model:', audioModel);
+      console.log('Video Model:', videoModel);
+      console.log('Lipsync Model:', lipsyncModel);
+      console.log('Full request body:', requestBody);
 
       const response = await fetch(`${apiUrl}/api/generate`, {
         method: 'POST',

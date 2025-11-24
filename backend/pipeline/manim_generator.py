@@ -138,6 +138,16 @@ class ManimGenerator:
         """
         system_prompt = """Generate Manim code for an educational animation.
 
+CRITICAL - NO TEXT OBJECTS (SUBTITLES HANDLE NARRATION):
+- ⛔ NEVER use Text() objects for narration or explanations - subtitles already show spoken words!
+- ⛔ NEVER create Text objects with dialogue, descriptions, or explanations
+- ✅ ONLY use MathTex() for mathematical equations and formulas (E = mc², x² + y² = r², etc.)
+- ✅ ONLY use Text() for SHORT labels on diagrams (max 1-3 words like "Input", "CPU", "Output")
+- The video has SUBTITLES that show everything being said - DO NOT duplicate this as Text!
+- Focus on VISUAL elements: shapes, diagrams, equations, arrows, graphs, animations
+- Example WRONG: Text("Let's multiply these fractions") ← FORBIDDEN! Subtitle already shows this
+- Example CORRECT: MathTex(r"\\frac{2}{3} \\times \\frac{4}{5}") ← This is a visual element
+
 CRITICAL - 9:8 ASPECT RATIO CANVAS (NOT 16:9!):
 - Resolution: 1080x960 (high quality) - This is a 9:8 aspect ratio, NOT 16:9!
 - Canvas width: ~10.8 Manim units (from -5.4 to +5.4)
@@ -295,58 +305,66 @@ WORD-SYNCHRONIZED ANIMATIONS (CRITICAL FOR ENGAGEMENT - MAKES ANIMATIONS POP!):
 You will receive word_sync data showing EXACTLY when each word is spoken.
 Use these to create DYNAMIC, SYNCHRONIZED animations that engage viewers!
 
-Helper function for word-sync timing:
+CRITICAL - Word-sync timing pattern (MUST USE THIS EXACT PATTERN):
 ```python
-def sync_to_word(self, target_time, elapsed_time):
-    '''Wait until target word time, play sync animation, return updated time'''
-    if target_time > elapsed_time:
-        self.wait(target_time - elapsed_time)
-    return target_time
-```
+# PATTERN: Wait to word time, then play animation, then update elapsed_time
+# This ensures animations sync perfectly with audio!
 
-Word-sync actions mapping:
-```python
 # "indicate" - Pulse/scale effect (MOST COMMON - use for any emphasis)
-elapsed_time = sync_to_word(word_time, elapsed_time)
+if word_time > elapsed_time:
+    self.wait(word_time - elapsed_time)
+    elapsed_time = word_time
 self.play(Indicate(target_object, scale_factor=1.3), run_time=0.4)
 elapsed_time += 0.4
 
 # "flash" - Bright flash effect (great for "look at this!")
-elapsed_time = sync_to_word(word_time, elapsed_time)
+if word_time > elapsed_time:
+    self.wait(word_time - elapsed_time)
+    elapsed_time = word_time
 self.play(Flash(target_object, color=YELLOW, line_length=0.5), run_time=0.3)
 elapsed_time += 0.3
 
 # "circumscribe" - Draw attention box (highlight important parts)
-elapsed_time = sync_to_word(word_time, elapsed_time)
+if word_time > elapsed_time:
+    self.wait(word_time - elapsed_time)
+    elapsed_time = word_time
 self.play(Circumscribe(target_object, color=RED, fade_out=True), run_time=0.6)
 elapsed_time += 0.6
 
 # "wiggle" - Playful wiggle (fun emphasis)
-elapsed_time = sync_to_word(word_time, elapsed_time)
+if word_time > elapsed_time:
+    self.wait(word_time - elapsed_time)
+    elapsed_time = word_time
 self.play(Wiggle(target_object, scale_value=1.2), run_time=0.4)
 elapsed_time += 0.4
 
 # "focus" - Zoom focus effect (direct attention)
-elapsed_time = sync_to_word(word_time, elapsed_time)
+if word_time > elapsed_time:
+    self.wait(word_time - elapsed_time)
+    elapsed_time = word_time
 self.play(FocusOn(target_object), run_time=0.3)
 elapsed_time += 0.3
 
 # "color_pulse" - Temporary color change
-elapsed_time = sync_to_word(word_time, elapsed_time)
-original_color = target_object.get_color()
+if word_time > elapsed_time:
+    self.wait(word_time - elapsed_time)
+    elapsed_time = word_time
 self.play(target_object.animate.set_color(YELLOW), run_time=0.2)
 self.play(target_object.animate.set_color(original_color), run_time=0.2)
 elapsed_time += 0.4
 
 # "scale_pop" - Quick scale up/down (makes it POP!)
-elapsed_time = sync_to_word(word_time, elapsed_time)
+if word_time > elapsed_time:
+    self.wait(word_time - elapsed_time)
+    elapsed_time = word_time
 self.play(target_object.animate.scale(1.3), run_time=0.15)
 self.play(target_object.animate.scale(1/1.3), run_time=0.15)
 elapsed_time += 0.3
 
 # "write_word" - Write text word-by-word (perfect for progressive reveal)
-# Use AddTextWordByWord if animating text reveal
-elapsed_time = sync_to_word(word_time, elapsed_time)
+if word_time > elapsed_time:
+    self.wait(word_time - elapsed_time)
+    elapsed_time = word_time
 self.play(AddTextWordByWord(text_object), run_time=0.5)
 elapsed_time += 0.5
 ```
@@ -377,20 +395,25 @@ def construct(self):
     #   {"word": "energy", "time": 4.1, "action": "indicate", "target": "e_part"}
     # ]
 
-    # When "Einstein" is spoken at 2.5s
-    elapsed_time = sync_to_word(2.5, elapsed_time)
+    # When "Einstein" is spoken at 2.5s - WAIT then ANIMATE
+    if 2.5 > elapsed_time:
+        self.wait(2.5 - elapsed_time)
+        elapsed_time = 2.5
     self.play(Flash(title, color=YELLOW, line_length=0.5), run_time=0.3)
     elapsed_time += 0.3
 
-    # When "equation" is spoken at 3.2s
-    elapsed_time = sync_to_word(3.2, elapsed_time)
+    # When "equation" is spoken at 3.2s - WAIT then ANIMATE
+    if 3.2 > elapsed_time:
+        self.wait(3.2 - elapsed_time)
+        elapsed_time = 3.2
     self.play(Circumscribe(equation, color=RED, fade_out=True), run_time=0.6)
     elapsed_time += 0.6
 
-    # When "energy" is spoken at 4.1s (highlight E in equation)
-    e_part = equation[0]  # Get the "E" part
-    elapsed_time = sync_to_word(4.1, elapsed_time)
-    self.play(Indicate(e_part, scale_factor=1.5), run_time=0.4)
+    # When "energy" is spoken at 4.1s - WAIT then ANIMATE
+    if 4.1 > elapsed_time:
+        self.wait(4.1 - elapsed_time)
+        elapsed_time = 4.1
+    self.play(Indicate(equation, scale_factor=1.5), run_time=0.4)
     elapsed_time += 0.4
 ```
 
@@ -460,13 +483,42 @@ SAFE VISUAL TECHNIQUES:
    - Use obj.scale_to_fit_height(2) for specific height
    - BANNED: .set_width(val, stretch=True) or .set_height(val, stretch=True)
 
+CRITICAL - TRANSFORM + INDEXING (CAUSES BROADCAST ERRORS):
+- NEVER access submobjects by index after Transform()
+- WRONG: self.play(Transform(obj1, obj2)) followed by obj1[0] or obj1[2]
+- This causes "ValueError: could not broadcast input array from shape (4,3) into shape (12,3)"
+- Solutions:
+  1. Use ReplacementTransform instead: self.play(ReplacementTransform(obj1, obj2)) then obj2[0]
+  2. Create new objects instead of transforming
+  3. Don't index into transformed objects - use them as a whole
+- Example SAFE: obj = new_obj; self.play(Indicate(obj))
+- Example UNSAFE: self.play(Transform(eq, eq_new)); self.play(Indicate(eq[2]))  # WRONG!
+
 CRITICAL - ARRAY/LIST ACCESS (MUST FOLLOW):
-- NEVER access list/VGroup indices without checking length first
-- ALWAYS use: if len(items) > index: items[index]
-- NEVER use: items[4] directly (will crash if less than 5 items)
-- For iteration: use for item in items: ... (safe, no indexing needed)
-- Example SAFE: for i, obj in enumerate(group): obj.set_color(BLUE)
-- Example UNSAFE: group[2].set_color(BLUE)  # WRONG! Check length first!
+- NEVER access MathTex/VGroup submobjects by index without checking length
+- WRONG: eq[0], eq[2], eq[4] (will crash if eq doesn't have 5+ submobjects!)
+- SAFE OPTION 1: Use whole object: self.play(Indicate(eq)) instead of Indicate(eq[0])
+- SAFE OPTION 2: Check length first: if len(eq) > 2: self.play(Indicate(eq[2]))
+- SAFE OPTION 3: Iterate: for part in eq: self.play(Indicate(part))
+- MathTex submobjects are UNPREDICTABLE - don't assume specific indices exist!
+- Example UNSAFE: final_eq = MathTex(r"x^2 + 5x + 6"); self.play(Indicate(final_eq[0]))  # CRASHES!
+- Example SAFE: final_eq = MathTex(r"x^2 + 5x + 6"); self.play(Indicate(final_eq))  # WORKS!
+
+CRITICAL - OBJECT LIFECYCLE (MUST FOLLOW):
+- NEVER use objects after they've been removed from the scene
+- WRONG: Remove obj → then use it in ReplacementTransform(obj, new_obj)
+- If you need to transform between scenes, DON'T remove the source object first
+- Example UNSAFE:
+  self.play(FadeOut(eq1))
+  self.remove(eq1)
+  active_objects.clear()  # eq1 is GONE now
+  self.play(ReplacementTransform(eq1, eq2))  # CRASHES! eq1 doesn't exist!
+- Example SAFE:
+  # Don't remove eq1 if you need it for transform
+  self.play(ReplacementTransform(eq1, eq2))  # Transform THEN remove
+  # OR just create new object:
+  self.play(FadeOut(eq1))
+  self.play(Create(eq2))
 
 VISUAL CREATIVITY (encouraged!):
 - Compound shapes: VGroup multiple shapes together, layer them creatively
@@ -524,21 +576,24 @@ Return ONLY Python code."""
 
 Topic: {topic}
 Duration: {target_duration} seconds
+Total Scenes: {len(visual_instructions)}
 
-VISUAL INSTRUCTIONS (IMPLEMENT ALL OF THESE IN ORDER):
+VISUAL INSTRUCTIONS:
 {instructions_json}
 {word_sync_note}
 
-Follow ALL system prompt rules:
-- 9:8 canvas (x: -5.4 to 5.4, y: -4.8 to 4.8)
-- Wrap text with wrap_text() helper
-- Use place_object_safe() for positioning
-- Track elapsed_time for timestamp synchronization
-- Implement each scene's "description" with suggested "manim_elements"
-- Respect "cleanup" arrays - remove old objects
-- Implement all "word_sync" actions if present
+REQUIREMENTS:
+1. Implement ALL {len(visual_instructions)} scenes from start to finish
+2. Each scene builds on previous content - don't remove objects unless "cleanup" says so
+3. Track elapsed_time for timestamp synchronization
+4. Use wrap_text() for all text
+5. Use place_object_safe() for positioning
+6. Implement word_sync actions if present
 
-Class name: EducationalScene"""
+Technical specs:
+- 9:8 canvas (x: -5.4 to 5.4, y: -4.8 to 4.8)
+- Class name: EducationalScene
+- Follow the "description" and "manim_elements" for each scene"""
 
         logger.info("Generating initial Manim code")
 
@@ -597,10 +652,14 @@ FAILED CODE:
 This is attempt {attempt + 1}/3. Please analyze the error carefully and fix the code.
 
 CRITICAL DEBUGGING TIPS FOR THIS ERROR:
-- If IndexError: You're accessing a list/VGroup index that doesn't exist. NEVER use direct indexing like items[4]. Instead iterate with "for item in items:" or check length first.
+- If IndexError "list index out of range": You're accessing MathTex/VGroup submobjects that don't exist (e.g., eq[0], eq[2]). MathTex doesn't always split into predictable submobjects! FIXES: (1) Use whole object: Indicate(eq) instead of Indicate(eq[0]), OR (2) Don't access by index at all - just animate the whole object, OR (3) Use Create/FadeIn instead of trying to access parts.
+- If error mentions object after active_objects.clear(): You removed an object then tried to use it! NEVER use ReplacementTransform(old_obj, new_obj) after removing old_obj. FIX: Either don't remove the old object before transform, OR just use Create(new_obj) instead of transforming.
+- If ValueError "could not broadcast input array": This is caused by accessing submobjects after Transform. NEVER use indexing after Transform (e.g., obj[0], obj[2]). Instead: (1) Use ReplacementTransform instead of Transform, OR (2) Create a new object instead of transforming, OR (3) Don't index into transformed objects.
 - If NameError: You used a deprecated/non-existent function. Check the system prompt for replacements (ShowCreation→Create, GrowArrow→Create, etc).
 - If TypeError with 'stretch': Remove the stretch parameter from set_width/set_height. Use .scale_to_fit_width() instead.
 - If AttributeError: The method doesn't exist. Use basic Manim methods only.
+
+SIMPLEST FIX FOR MOST ERRORS: Don't use indexing (obj[0], obj[2]) or Transform at all. Just use Create, FadeIn, FadeOut on whole objects!
 
 Return ONLY the fixed Python code, no explanations."""
 
@@ -799,13 +858,31 @@ def remove_object_tracking(obj):
                 code = code[:insert_pos] + '\nimport numpy as np' + code[insert_pos:]
 
         # Step 2: Add helper functions if not present
-        if 'def wrap_text' not in code:
-            logger.info("Adding wrap_text() helper function")
+        # Check for any of the critical helper functions
+        needs_helpers = (
+            'def wrap_text' not in code or
+            'def remove_object_tracking' not in code or
+            'def place_object_safe' not in code or
+            'placed_objects = []' not in code
+        )
+
+        if needs_helpers:
+            logger.info("Adding helper functions (wrap_text, place_object_safe, remove_object_tracking, placed_objects, etc.)")
             # Insert after imports and before class definition
             class_match = re.search(r'(class \w+\(Scene\):)', code)
             if class_match:
                 insert_pos = class_match.start()
+                # Remove any partial helper function definitions first to avoid duplicates
+                code = re.sub(r'def wrap_text\(.*?\):.*?(?=\ndef [a-z_]|\nclass )', '', code, flags=re.DOTALL)
+                code = re.sub(r'def remove_object_tracking\(.*?\):.*?(?=\ndef [a-z_]|\nclass )', '', code, flags=re.DOTALL)
+                code = re.sub(r'def place_object_safe\(.*?\):.*?(?=\ndef [a-z_]|\nclass )', '', code, flags=re.DOTALL)
+                code = re.sub(r'placed_objects\s*=\s*\[\]', '', code, flags=re.DOTALL)
+                # Add complete helper functions
                 code = code[:insert_pos] + HELPER_FUNCTIONS + '\n' + code[insert_pos:]
+            else:
+                logger.warning("Could not find class definition to insert helper functions!")
+        else:
+            logger.info("Helper functions already present in code")
 
         # Step 3: Auto-wrap long Text() calls
         # Find Text("long string", ...) and wrap with wrap_text()
@@ -870,6 +947,93 @@ def remove_object_tracking(obj):
             return safe_corners.get(corner, match.group(0))
 
         code = re.sub(r'\.to_corner\((UP \+ LEFT|UP \+ RIGHT|DOWN \+ LEFT|DOWN \+ RIGHT|UL|UR|DL|DR)\)', replace_to_corner, code)
+
+        # Step 5: Fix dangerous indexing patterns (causes IndexError)
+        # Pattern: obj[0], obj[2], obj[4] without length checks
+        # This is EXTREMELY common and causes "IndexError: list index out of range"
+
+        # Find all direct indexing patterns: variable_name[number]
+        indexing_pattern = r'(\w+)\[(\d+)\]'
+        indexing_matches = re.findall(indexing_pattern, code)
+
+        if indexing_matches:
+            logger.info("Detected direct indexing - wrapping with length checks...")
+
+            # Group by variable name
+            indexed_vars = {}
+            for var_name, index in indexing_matches:
+                if var_name not in indexed_vars:
+                    indexed_vars[var_name] = []
+                indexed_vars[var_name].append(int(index))
+
+            # For each variable that's indexed, wrap accesses in safe checks
+            for var_name, indices in indexed_vars.items():
+                max_index = max(indices)
+                # Only fix if indexing > 0 (common for MathTex submobjects)
+                if max_index > 0:
+                    logger.info(f"Variable '{var_name}' is indexed up to [{max_index}] - replacing with safe iteration")
+
+                    # Replace pattern: self.play(Indicate(var[0])) with safe version
+                    # Find all Indicate/Flash/etc calls with indexing
+                    for idx in indices:
+                        unsafe_pattern = rf'self\.play\((Indicate|Flash|Circumscribe|FocusOn)\({var_name}\[{idx}\]([^)]*)\)\)'
+                        safe_replacement = rf'# Safely access {var_name}[{idx}] if it exists\n        if len({var_name}) > {idx}: self.play(\1({var_name}[{idx}]\2))'
+                        code = re.sub(unsafe_pattern, safe_replacement, code)
+
+        # Step 6: Remove ReplacementTransform/Transform using objects that don't exist
+        # Pattern: object was removed from scene, then used in ReplacementTransform
+        # This causes various errors
+
+        # Find all variable assignments and tracking
+        lines = code.split('\n')
+        removed_vars = set()
+        new_lines = []
+
+        for i, line in enumerate(lines):
+            # Track objects that get removed
+            if 'self.remove(' in line or 'active_objects.clear()' in line:
+                # Mark that variables might be invalid after this point
+                pass
+
+            # Check for ReplacementTransform/Transform with potentially removed objects
+            transform_match = re.search(r'self\.play\((Replacement)?Transform\((\w+),\s*(\w+)\)', line)
+            if transform_match:
+                source_obj = transform_match.group(2)
+                target_obj = transform_match.group(3)
+
+                # Check if source_obj was created in this scene or previous
+                # If it looks like it was removed, comment it out and just create target
+                if i > 100:  # Arbitrary - if deep in code, likely cross-scene reference
+                    # Look back to see if source was defined recently
+                    lookback = '\n'.join(lines[max(0, i-30):i])
+                    if source_obj not in lookback and 'active_objects.clear()' in lookback:
+                        logger.warning(f"Line {i}: {source_obj} likely removed before Transform - replacing with direct Create")
+                        # Replace with direct creation
+                        indent = len(line) - len(line.lstrip())
+                        new_line = ' ' * indent + f'self.play(Create({target_obj}))'
+                        new_lines.append(new_line)
+                        continue
+
+            new_lines.append(line)
+
+        code = '\n'.join(new_lines)
+
+        # Step 7: Fix any legacy sync_to_word usage (broken pattern that doesn't call self.wait)
+        # Pattern: elapsed_time = sync_to_word(X.X, elapsed_time)
+        # Fix: if X.X > elapsed_time: self.wait(X.X - elapsed_time); elapsed_time = X.X
+        sync_pattern = r'elapsed_time\s*=\s*sync_to_word\(([0-9.]+),\s*elapsed_time\)'
+        sync_matches = re.findall(sync_pattern, code)
+
+        if sync_matches:
+            logger.warning(f"Found {len(sync_matches)} legacy sync_to_word calls - converting to inline wait pattern")
+            for time_value in sync_matches:
+                old_pattern = rf'elapsed_time\s*=\s*sync_to_word\({time_value},\s*elapsed_time\)'
+                # Replace with correct inline pattern that calls self.wait()
+                new_pattern = f'''if {time_value} > elapsed_time:
+        self.wait({time_value} - elapsed_time)
+        elapsed_time = {time_value}'''
+                code = re.sub(old_pattern, new_pattern, code)
+                logger.info(f"Converted sync_to_word({time_value}) to inline wait pattern")
 
         logger.info("Canvas bounds enforcement complete")
         return code

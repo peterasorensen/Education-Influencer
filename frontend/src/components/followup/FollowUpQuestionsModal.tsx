@@ -25,6 +25,10 @@ export const FollowUpQuestionsModal: React.FC<Props> = ({
 
   useEffect(() => {
     if (isOpen && topic) {
+      // Reset all state when modal opens
+      setCurrentQuestionIndex(0);
+      setIsSubmitting(false);
+      setAnswers({});
       fetchQuestions();
     }
   }, [isOpen, topic]);

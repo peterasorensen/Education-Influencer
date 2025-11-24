@@ -3,12 +3,22 @@ Storyboard Generator Module
 
 Generates structured storyboard JSON with spatial tracking from script and timestamps.
 Replaces VisualScriptGenerator with enhanced spatial awareness and layout planning.
+Supports cumulative visual context for progressive diagram building.
 """
 
 import logging
 from typing import Callable, Optional, List, Dict, Any
 from openai import AsyncOpenAI
 import json
+
+# Import visual context system
+try:
+    from .visual_context import VisualContext, SceneVisualState, VisualElement, VisualElementType
+except ImportError:
+    VisualContext = None
+    SceneVisualState = None
+    VisualElement = None
+    VisualElementType = None
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +52,7 @@ class StoryboardGenerator:
         aligned_timestamps: Optional[List[Dict]] = None,
         word_timestamps: Optional[Dict] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
+        visual_context: Optional[Any] = None,  # VisualContext
     ) -> Dict[str, Any]:
         """
         Generate storyboard JSON from script with spatial tracking and word-sync actions.
@@ -52,6 +63,7 @@ class StoryboardGenerator:
             aligned_timestamps: Optional list of script segments with timing
             word_timestamps: Optional dict with word-level timing from Whisper
             progress_callback: Optional callback for progress updates
+            visual_context: Optional VisualContext for scene continuity
 
         Returns:
             Storyboard dictionary with metadata, scenes, and word-sync actions
@@ -159,12 +171,21 @@ Return valid JSON with "metadata" and "scenes" keys."""
                         for w in seg["words"][:10]:  # Show up to 10 words per segment
                             word_sync_info += f"  - \"{w.get('word', '')}\" at {w.get('start', 0):.2f}s\n"
 
+            # Inject visual context if provided
+            visual_context_prompt = ""
+            if visual_context:
+                visual_context_prompt = "\n\n" + visual_context.get_visual_summary() + "\n"
+                logger.info(f"Including visual context from {len(visual_context.scenes)} previous scenes")
+            else:
+                logger.info("No visual context - this is the first scene or context not provided")
+
             user_prompt = f"""EDUCATIONAL TOPIC: {topic}
 Duration: {total_duration:.1f}s
 
 SCRIPT (what's being taught):
 {script_text}
 {word_sync_info}
+{visual_context_prompt}
 
 YOUR JOB: Create visuals that TEACH this concept, not generic diagrams!
 

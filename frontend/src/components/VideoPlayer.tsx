@@ -18,7 +18,15 @@ export const VideoPlayer = ({ url, onNewVideo }: VideoPlayerProps) => {
           className="video-player"
           controls
           src={url}
+          preload="metadata"
           aria-label="Generated educational video"
+          onError={(e) => {
+            console.error('Video playback error:', e);
+            toast.error('Failed to load video. Try downloading instead.');
+          }}
+          onLoadedMetadata={() => {
+            console.log('Video metadata loaded successfully');
+          }}
         >
           Your browser does not support the video tag.
         </video>

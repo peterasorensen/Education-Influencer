@@ -33,6 +33,7 @@ class ResumeDetector:
             Dictionary mapping step names to completion status
         """
         steps = {
+            "nano_banana": False,  # NEW - Custom character image generation
             "script": False,
             "audio": False,
             "timestamps": False,
@@ -49,6 +50,14 @@ class ResumeDetector:
         if not self.job_dir.exists():
             logger.info(f"Job directory does not exist: {self.job_dir}")
             return steps
+
+        # Check nano_banana custom images
+        nano_banana_dir = self.job_dir / "nano_banana_images"
+        if nano_banana_dir.exists():
+            custom_images = list(nano_banana_dir.glob("celebrity_*_custom.jpg"))
+            if len(custom_images) > 0:
+                steps["nano_banana"] = True
+                logger.info(f"✓ Nano Banana images found ({len(custom_images)} custom images)")
 
         # Check script
         script_path = self.job_dir / "script.json"
@@ -141,6 +150,7 @@ class ResumeDetector:
         steps = self.detect_completed_steps()
 
         # Resume from first incomplete step
+        # Note: nano_banana is optional - if no prompts provided, it's automatically "complete"
         if not steps["script"]:
             return "script"
         elif not steps["audio"]:
@@ -208,6 +218,7 @@ class ResumeDetector:
     def get_paths(self) -> Dict[str, Path]:
         """Get all relevant file paths for the job."""
         return {
+            "nano_banana_images": self.job_dir / "nano_banana_images",  # NEW
             "script": self.job_dir / "script.json",
             "audio": self.job_dir / "narration.mp3",
             "audio_segments": self.job_dir / "audio_segments",
@@ -236,17 +247,18 @@ class ResumeDetector:
         summary += "Steps:\n"
 
         step_names = {
-            "script": "1. Script Generation",
-            "audio": "2. Audio Generation",
-            "timestamps": "3. Timestamp Extraction",
-            "visual_instructions": "4a. Visual Instructions (legacy)",
-            "storyboard": "4b. Storyboard Generation (NEW)",
-            "manim_code": "5. Manim Code",
-            "manim_render": "6. Manim Render",
-            "celebrity_videos": "7. Celebrity Videos",
-            "lipsynced_videos": "8. Lip-synced Videos",
-            "composite": "9. Composite Video",
-            "final": "10. Final Video",
+            "nano_banana": "1. Custom Character Images (optional)",
+            "script": "2. Script Generation",
+            "audio": "3. Audio Generation",
+            "timestamps": "4. Timestamp Extraction",
+            "visual_instructions": "5a. Visual Instructions (legacy)",
+            "storyboard": "5b. Storyboard Generation (NEW)",
+            "manim_code": "6. Manim Code",
+            "manim_render": "7. Manim Render",
+            "celebrity_videos": "8. Celebrity Videos",
+            "lipsynced_videos": "9. Lip-synced Videos",
+            "composite": "10. Composite Video",
+            "final": "11. Final Video",
         }
 
         for key, name in step_names.items():

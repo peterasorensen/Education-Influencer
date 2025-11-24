@@ -49,6 +49,7 @@ export interface CelebrityConfig {
   photoId?: string;  // For custom
   audioId?: string;  // For custom
   userId?: string;
+  nanoBananaPrompt?: string;  // NEW - Optional AI image customization prompt
 }
 
 export type CelebritiesSelection = CelebrityConfig[];

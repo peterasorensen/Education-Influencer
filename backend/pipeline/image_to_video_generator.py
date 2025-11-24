@@ -112,7 +112,7 @@ class ImageToVideoGenerator:
                         "fps": 24,  # Default FPS
                         "camera_fixed": False,  # Allow camera movement
                     }
-                    timeout_seconds = 180  # 3 minute timeout for faster Seedance
+                    timeout_seconds = 900  # 15 minute timeout for Seedance
                 else:
                     # Kling v2.5 model: only accepts duration of 5 or 10 seconds
                     # Use minimum duration that can fit the requested duration (ceiling logic)
@@ -131,7 +131,7 @@ class ImageToVideoGenerator:
                         "duration": video_duration,  # Must be 5 or 10
                         "aspect_ratio": aspect_ratio,
                     }
-                    timeout_seconds = 300  # 5 minute timeout for Kling
+                    timeout_seconds = 1200  # 20 minute timeout for Kling
 
                 # Run with timeout to prevent infinite polling
                 try:

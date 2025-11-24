@@ -3,12 +3,19 @@ Script Generator Module
 
 Generates multi-voice conversational scripts using OpenAI GPT-4o.
 Creates engaging educational content with multiple characters (boy and girl voices).
+Supports dynamic character personality injection for authentic dialogue.
 """
 
 import logging
 from typing import Callable, Optional, List, Dict, Any
 from openai import AsyncOpenAI
 import json
+
+# Import character context system
+try:
+    from .character_profile import CharacterContext
+except ImportError:
+    CharacterContext = None
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +41,7 @@ class ScriptGenerator:
         progress_callback: Optional[Callable[[str, int], None]] = None,
         speaker_names: Optional[Dict[str, str]] = None,
         refined_context: Optional[Dict[str, Any]] = None,
+        character_context: Optional[Any] = None,  # CharacterContext
     ) -> List[Dict[str, str]]:
         """
         Generate a multi-voice educational script.
@@ -47,6 +55,7 @@ class ScriptGenerator:
                           Defaults to {"teacher": "Teacher", "student": "Student"}
             refined_context: Optional enhanced context from follow-up questions
                             Contains: audience, complexity_level, focus_areas, teaching_style
+            character_context: Optional CharacterContext with personality profiles and relationships
 
         Returns:
             List of script segments with speaker and text
@@ -105,7 +114,16 @@ PEDAGOGICAL PRINCIPLES (inspired by Grant Sanderson/3Blue1Brown, Sal Khan, Richa
 DIALOGUE CHARACTERS:
 - {teacher_name}: Clear, enthusiastic, uses analogies, builds step-by-step
 - {student_name}: Curious, asks clarifying questions, provides "aha" moments, relates to real life
+"""
 
+            # Inject character personality context if provided
+            if character_context:
+                logger.info("Injecting character personality context into script generation")
+                system_prompt += "\n\n" + character_context.to_prompt_context()
+            else:
+                logger.info("No character context provided - using generic character templates")
+
+            system_prompt += """
 OUTPUT FORMAT (JSON):
 Return a JSON object with key "dialogue" containing an array of segments:
 [

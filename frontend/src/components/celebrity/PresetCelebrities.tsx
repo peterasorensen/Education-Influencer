@@ -10,9 +10,11 @@ interface Celebrity {
 interface PresetCelebritiesProps {
   onSelect: (celebrity: string) => void;
   selected?: string;
+  nanoBananaPrompt?: string;
+  onPromptChange?: (prompt: string) => void;
 }
 
-export const PresetCelebrities = ({ onSelect, selected }: PresetCelebritiesProps) => {
+export const PresetCelebrities = ({ onSelect, selected, nanoBananaPrompt, onPromptChange }: PresetCelebritiesProps) => {
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const [celebrities, setCelebrities] = useState<Celebrity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -184,6 +186,41 @@ export const PresetCelebrities = ({ onSelect, selected }: PresetCelebritiesProps
                 )}
               </button>
             </div>
+
+            {/* AI Customization Prompt - Shows only when this character is selected */}
+            {selected === celebrity.id && onPromptChange && (
+              <div className="celebrity-prompt-section">
+                <label htmlFor={`prompt-${celebrity.id}`} className="celebrity-prompt-label">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    width="16"
+                    height="16"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+                    />
+                  </svg>
+                  Customize with AI (Optional)
+                </label>
+                <p className="celebrity-prompt-description">
+                  Transform this character's look. Try: "in a lab coat", "wearing sunglasses", "as a superhero"
+                </p>
+                <textarea
+                  id={`prompt-${celebrity.id}`}
+                  className="celebrity-prompt-input"
+                  placeholder="Describe the transformation..."
+                  value={nanoBananaPrompt || ''}
+                  onChange={(e) => onPromptChange(e.target.value)}
+                  rows={2}
+                />
+              </div>
+            )}
           </div>
         ))}
       </div>

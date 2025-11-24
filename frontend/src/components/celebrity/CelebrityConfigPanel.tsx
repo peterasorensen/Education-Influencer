@@ -32,6 +32,10 @@ export const CelebrityConfigPanel = ({ config, onChange }: CelebrityConfigPanelP
     onChange({ ...config, mode: 'custom', audioId });
   };
 
+  const handlePromptChange = (prompt: string) => {
+    onChange({ ...config, nanoBananaPrompt: prompt });
+  };
+
   return (
     <div className="celebrity-config-panel">
       <div className="mode-tabs">
@@ -80,14 +84,51 @@ export const CelebrityConfigPanel = ({ config, onChange }: CelebrityConfigPanelP
           <PresetCelebrities
             selected={config.name}
             onSelect={handlePresetSelect}
+            nanoBananaPrompt={config.nanoBananaPrompt}
+            onPromptChange={handlePromptChange}
           />
         ) : (
-          <CustomCelebrity
-            photoId={config.photoId}
-            audioId={config.audioId}
-            onPhotoUpload={handlePhotoUpload}
-            onAudioUpload={handleAudioUpload}
-          />
+          <>
+            <CustomCelebrity
+              photoId={config.photoId}
+              audioId={config.audioId}
+              onPhotoUpload={handlePhotoUpload}
+              onAudioUpload={handleAudioUpload}
+            />
+
+            {/* AI Image Customization for Custom Upload */}
+            <div className="nano-banana-prompt-section">
+              <label htmlFor="nano-banana-prompt-custom" className="prompt-label">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  width="18"
+                  height="18"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+                  />
+                </svg>
+                AI Image Customization (Optional)
+              </label>
+              <p className="prompt-description">
+                Transform this character's appearance with AI. Example: "wearing a lab coat and glasses", "in medieval armor", "as a superhero"
+              </p>
+              <textarea
+                id="nano-banana-prompt-custom"
+                className="nano-banana-prompt-input"
+                placeholder="Describe how you want to customize this character's image..."
+                value={config.nanoBananaPrompt || ''}
+                onChange={(e) => handlePromptChange(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </>
         )}
       </div>
     </div>

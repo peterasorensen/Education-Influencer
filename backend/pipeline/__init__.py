@@ -27,6 +27,19 @@ from .lipsync_generator import LipsyncGenerator
 from .video_stitcher import VideoStitcher
 from .resume_detector import ResumeDetector
 from .celebrity_loader import CelebrityLoader  # NEW - Dynamic celebrity loading
+from .nano_banana_generator import NanoBananaGenerator  # NEW - Character image customization
+from .character_profile import (  # NEW - Character personality system
+    CharacterProfileGenerator,
+    CharacterPersonality,
+    CharacterRelationship,
+    CharacterContext,
+)
+from .visual_context import (  # NEW - Visual continuity system
+    VisualContext,
+    SceneVisualState,
+    VisualElement,
+    VisualElementType,
+)
 
 __all__ = [
     "ScriptGenerator",
@@ -49,4 +62,13 @@ __all__ = [
     "VideoStitcher",
     "ResumeDetector",
     "CelebrityLoader",  # NEW - Dynamic celebrity loading
+    "NanoBananaGenerator",  # NEW - Character image customization
+    "CharacterProfileGenerator",  # NEW - Character personality
+    "CharacterPersonality",
+    "CharacterRelationship",
+    "CharacterContext",
+    "VisualContext",  # NEW - Visual continuity
+    "SceneVisualState",
+    "VisualElement",
+    "VisualElementType",
 ]

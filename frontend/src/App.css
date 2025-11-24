@@ -2166,6 +2166,136 @@ body {
   background: var(--gradient-success);
 }
 
+/* Celebrity Card Prompt Section (inside each card) */
+.celebrity-prompt-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(79, 172, 254, 0.2);
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+    transform: translateY(0);
+  }
+}
+
+.celebrity-prompt-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-bottom: 0.4rem;
+}
+
+.celebrity-prompt-label svg {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.celebrity-prompt-description {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+}
+
+.celebrity-prompt-input {
+  width: 100%;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1.5px solid rgba(79, 172, 254, 0.3);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+  font-family: inherit;
+  line-height: 1.4;
+  resize: vertical;
+  transition: all var(--transition-base);
+}
+
+.celebrity-prompt-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  background: rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+}
+
+.celebrity-prompt-input::placeholder {
+  color: var(--color-text-tertiary);
+  font-size: 0.85rem;
+}
+
+/* Nano Banana AI Customization Prompt (for custom upload mode) */
+.nano-banana-prompt-section {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: rgba(79, 172, 254, 0.05);
+  border: 2px dashed rgba(79, 172, 254, 0.3);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition-base);
+}
+
+.nano-banana-prompt-section:focus-within {
+  border-color: rgba(79, 172, 254, 0.6);
+  background: rgba(79, 172, 254, 0.08);
+}
+
+.prompt-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.prompt-label svg {
+  color: var(--color-primary);
+}
+
+.prompt-description {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.nano-banana-prompt-input {
+  width: 100%;
+  padding: 0.875rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  transition: all var(--transition-base);
+}
+
+.nano-banana-prompt-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+}
+
+.nano-banana-prompt-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
 /* Custom Celebrity */
 .custom-celebrity {
   display: flex;

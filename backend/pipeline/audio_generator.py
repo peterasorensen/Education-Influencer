@@ -52,13 +52,33 @@ class AudioGenerator:
         self.audio_model = audio_model
         self.celebrity_audio_samples = celebrity_audio_samples or {}
         self.use_tortoise = audio_model and "tortoise" in audio_model.lower()
+        self.use_minimax = audio_model and ("minimax" in audio_model.lower() or "speech-2.6" in audio_model.lower())
+
+        logger.info(f"=== AudioGenerator initialized ===")
+        logger.info(f"  audio_model: {audio_model}")
+        logger.info(f"  use_tortoise: {self.use_tortoise}")
+        logger.info(f"  use_minimax: {self.use_minimax}")
+        logger.info(f"  replicate_token provided: {bool(replicate_token)}")
+        logger.info(f"  celebrity_audio_samples keys: {list(self.celebrity_audio_samples.keys())}")
+
+        # Debug: log full paths
+        for key, path in self.celebrity_audio_samples.items():
+            logger.info(f"    {key}: {path} (exists: {path.exists() if path else False})")
 
         if self.use_tortoise:
             if not replicate_token:
-                logger.warning("Tortoise TTS enabled but no Replicate token provided. Falling back to OpenAI TTS.")
+                logger.warning("❌ Tortoise TTS enabled but no Replicate token provided. Falling back to OpenAI TTS.")
                 self.use_tortoise = False
             else:
-                logger.info(f"Using Tortoise TTS model: {audio_model}")
+                logger.info(f"✅ Using Tortoise TTS model: {audio_model}")
+                os.environ["REPLICATE_API_TOKEN"] = replicate_token
+
+        if self.use_minimax:
+            if not replicate_token:
+                logger.warning("❌ MiniMax TTS enabled but no Replicate token provided. Falling back to OpenAI TTS.")
+                self.use_minimax = False
+            else:
+                logger.info(f"✅ Using MiniMax speech-2.6-hd model: {audio_model}")
                 os.environ["REPLICATE_API_TOKEN"] = replicate_token
 
     def _get_voice_for_speaker(self, speaker: str) -> str:
@@ -84,9 +104,10 @@ class AudioGenerator:
             celebrity_audio_samples: Optional mapping from celebrity key to audio sample path
 
         Returns:
-            Path to audio sample or None if not using Tortoise TTS
+            Path to audio sample or None if not using voice cloning (Tortoise/MiniMax)
         """
-        if not self.use_tortoise:
+        # Only needed for voice cloning models (Tortoise or MiniMax)
+        if not self.use_tortoise and not self.use_minimax:
             return None
 
         # Priority 1: Use speaker-to-celebrity mapping if provided (NEW)
@@ -98,12 +119,35 @@ class AudioGenerator:
                     logger.info(f"Mapped speaker '{speaker}' -> {celeb_key} -> {audio_sample} for voice cloning")
                     return audio_sample
 
-        # Priority 2: Direct name mapping (if speaker is literally "Drake" or "Sydney")
+        # Priority 2: Direct name mapping (if speaker name contains celebrity name)
         speaker_lower = speaker.lower()
+        logger.info(f"Checking direct name mapping for speaker: '{speaker}' (lowercase: '{speaker_lower}')")
+        logger.info(f"Available celebrity audio samples: {list(self.celebrity_audio_samples.keys())}")
+
         if "drake" in speaker_lower:
-            return self.celebrity_audio_samples.get("drake")
+            result = self.celebrity_audio_samples.get("drake")
+            logger.info(f"Matched 'drake' -> {result}")
+            return result
         elif "sydney" in speaker_lower:
-            return self.celebrity_audio_samples.get("sydney_sweeney")
+            result = self.celebrity_audio_samples.get("sydney_sweeney")
+            logger.info(f"Matched 'sydney' -> {result}")
+            return result
+        elif "trump" in speaker_lower:
+            result = self.celebrity_audio_samples.get("trump")
+            logger.info(f"Matched 'trump' -> {result}")
+            return result
+        elif "biden" in speaker_lower or "joe" in speaker_lower:
+            result = self.celebrity_audio_samples.get("joe_biden")
+            logger.info(f"Matched 'biden/joe' -> {result}")
+            return result
+        elif "goku" in speaker_lower:
+            result = self.celebrity_audio_samples.get("goku")
+            logger.info(f"Matched 'goku' -> {result}")
+            return result
+        elif "vegeta" in speaker_lower:
+            result = self.celebrity_audio_samples.get("vegeta")
+            logger.info(f"Matched 'vegeta' -> {result}")
+            return result
 
         # Priority 3: Map based on assigned voice (backward compatibility)
         voice = self._get_voice_for_speaker(speaker)
@@ -151,6 +195,22 @@ class AudioGenerator:
             # Get voice for speaker (assigns voice if not already assigned)
             voice = self._get_voice_for_speaker(speaker)
 
+            logger.info(f"=== Generating audio for speaker '{speaker}' ===")
+            logger.info(f"  use_tortoise flag: {self.use_tortoise}")
+            logger.info(f"  use_minimax flag: {self.use_minimax}")
+            logger.info(f"  audio_model: {self.audio_model}")
+            logger.info(f"  Assigned voice: {voice}")
+
+            # Use MiniMax voice cloning if enabled (check first as it's higher quality)
+            if self.use_minimax:
+                result = await self._generate_minimax_audio(
+                    text, speaker, output_path,
+                    speaker_celebrity_map, celebrity_audio_samples
+                )
+                elapsed = time.time() - segment_start
+                logger.info(f"  ⏱️  MiniMax TTS for '{speaker}' took {elapsed:.2f}s")
+                return result
+
             # Use Tortoise TTS if enabled
             if self.use_tortoise:
                 result = await self._generate_tortoise_audio(
@@ -159,16 +219,6 @@ class AudioGenerator:
                 )
                 elapsed = time.time() - segment_start
                 logger.info(f"  ⏱️  Tortoise TTS for '{speaker}' took {elapsed:.2f}s")
-                return result
-
-            # Use MiniMax voice cloning if enabled
-            if self.audio_model and "minimax" in self.audio_model.lower():
-                result = await self._generate_minimax_audio(
-                    text, speaker, output_path,
-                    speaker_celebrity_map, celebrity_audio_samples
-                )
-                elapsed = time.time() - segment_start
-                logger.info(f"  ⏱️  MiniMax TTS for '{speaker}' took {elapsed:.2f}s")
                 return result
 
             # Otherwise use OpenAI TTS (default)
@@ -318,6 +368,74 @@ class AudioGenerator:
             logger.warning(f"Falling back to OpenAI TTS for {speaker}")
             return await self._generate_openai_audio(text, speaker, output_path)
 
+    async def _get_minimax_voice_id(
+        self,
+        audio_sample: Path,
+        celebrity_key: Optional[str] = None
+    ) -> str:
+        """
+        Get or create MiniMax voice_id for an audio sample.
+
+        For preset celebrities, caches voice_id in assets folder.
+        For custom uploads, generates voice_id on-the-fly.
+
+        Args:
+            audio_sample: Path to audio sample file
+            celebrity_key: Optional celebrity key (e.g., "drake", "trump") for caching
+
+        Returns:
+            voice_id string to use with MiniMax speech generation
+        """
+        # Check if voice_id already exists for preset character
+        if celebrity_key:
+            voice_id_file = audio_sample.parent / "minimax_voice_id.txt"
+
+            if voice_id_file.exists():
+                voice_id = voice_id_file.read_text().strip()
+                logger.info(f"✅ Using cached MiniMax voice_id for {celebrity_key}: {voice_id}")
+                return voice_id
+
+        # Need to clone voice to get voice_id
+        logger.info(f"🎤 Cloning voice from {audio_sample} (this may take 10-30 seconds)...")
+
+        try:
+            with open(audio_sample, "rb") as audio_file:
+                output = await asyncio.to_thread(
+                    replicate.run,
+                    "minimax/voice-cloning",
+                    input={
+                        "voice_file": audio_file,
+                        "model": "speech-2.6-hd",  # Always use HD model
+                        "accuracy": 0.7,
+                        "need_noise_reduction": False,
+                        "need_volume_normalization": False,
+                    }
+                )
+
+            # Extract voice_id from output
+            # Output is a dict with 'voice_id' field
+            if isinstance(output, dict) and "voice_id" in output:
+                voice_id = output["voice_id"]
+            elif hasattr(output, "voice_id"):
+                voice_id = output.voice_id
+            else:
+                # The output might be the voice_id directly
+                voice_id = str(output)
+
+            logger.info(f"✅ Voice cloned successfully! voice_id: {voice_id}")
+
+            # Cache voice_id for preset characters
+            if celebrity_key:
+                voice_id_file = audio_sample.parent / "minimax_voice_id.txt"
+                voice_id_file.write_text(voice_id)
+                logger.info(f"💾 Cached voice_id for {celebrity_key} at {voice_id_file}")
+
+            return voice_id
+
+        except Exception as e:
+            logger.error(f"Failed to clone voice: {e}")
+            raise Exception(f"MiniMax voice cloning failed: {e}")
+
     async def _generate_minimax_audio(
         self,
         text: str,
@@ -328,6 +446,10 @@ class AudioGenerator:
     ) -> Path:
         """
         Generate audio using MiniMax voice cloning via Replicate.
+
+        This is a two-step process:
+        1. Get/create voice_id from audio sample (cached for preset characters)
+        2. Generate speech using voice_id
 
         Args:
             text: The text to convert to speech
@@ -352,22 +474,38 @@ class AudioGenerator:
                 logger.warning(f"Audio sample not found for {speaker}, falling back to OpenAI TTS")
                 return await self._generate_openai_audio(text, speaker, output_path)
 
-            logger.info(f"Generating MiniMax voice cloning audio for {speaker} using sample: {audio_sample}")
+            logger.info(f"Generating MiniMax audio for {speaker} using sample: {audio_sample}")
 
-            # Run MiniMax voice cloning model via Replicate
-            with open(audio_sample, "rb") as audio_file:
-                output = await asyncio.to_thread(
-                    replicate.run,
-                    self.audio_model,
-                    input={
-                        "text": text,  # Assuming text parameter exists (may need adjustment)
-                        "voice_file": audio_file,
-                        "model": "speech-02-turbo",  # Default to turbo model for speed
-                        "accuracy": 0.7,  # Default accuracy threshold
-                        "need_noise_reduction": False,
-                        "need_volume_normalization": False,
-                    }
-                )
+            # Get celebrity key for caching (if applicable)
+            celebrity_key = None
+            if speaker_celebrity_map:
+                celebrity_key = speaker_celebrity_map.get(speaker)
+
+            # Step 1: Get or create voice_id
+            voice_id = await self._get_minimax_voice_id(audio_sample, celebrity_key)
+
+            # Step 2: Generate speech using voice_id
+            logger.info(f"🎙️  Generating speech with MiniMax speech-2.6-hd...")
+
+            output = await asyncio.to_thread(
+                replicate.run,
+                "minimax/speech-2.6-hd",
+                input={
+                    "text": text,
+                    "voice_id": voice_id,
+                    "pitch": 0,
+                    "speed": 1.0,
+                    "volume": 1.0,
+                    "bitrate": 128000,
+                    "channel": "mono",
+                    "emotion": "auto",
+                    "sample_rate": 32000,
+                    "audio_format": "mp3",
+                    "language_boost": "None",
+                    "subtitle_enable": False,
+                    "english_normalization": False,
+                }
+            )
 
             # Download the output audio
             if output:
@@ -391,55 +529,18 @@ class AudioGenerator:
 
                 logger.info(f"Downloading MiniMax output from: {output_url}")
 
-                # Download to temporary file first
-                temp_path = output_path.with_suffix('.tmp.mp3')
-
+                # Download directly to output path
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.get(output_url)
                     response.raise_for_status()
 
-                    with open(temp_path, "wb") as f:
+                    with open(output_path, "wb") as f:
                         f.write(response.content)
 
-                logger.info(f"Downloaded MiniMax output to {temp_path} ({len(response.content)} bytes)")
-
-                # Re-encode using ffmpeg to ensure compatibility with pydub
-                import subprocess
-
-                try:
-                    logger.info(f"Re-encoding MP3 for pydub compatibility...")
-                    result = await asyncio.to_thread(
-                        subprocess.run,
-                        [
-                            "ffmpeg", "-y", "-i", str(temp_path),
-                            "-acodec", "libmp3lame", "-ab", "192k",
-                            "-ar", "24000",  # Standard sample rate
-                            str(output_path)
-                        ],
-                        capture_output=True,
-                        text=True,
-                    )
-
-                    if result.returncode != 0:
-                        logger.error(f"ffmpeg re-encoding failed: {result.stderr}")
-                        # Fall back to using temp file as-is
-                        import shutil
-                        shutil.move(str(temp_path), str(output_path))
-                    else:
-                        # Remove temp file
-                        temp_path.unlink()
-                        logger.info(f"Successfully re-encoded MP3")
-
-                except Exception as e:
-                    logger.error(f"Re-encoding failed: {e}, using original file")
-                    # Fall back to using temp file as-is
-                    import shutil
-                    shutil.move(str(temp_path), str(output_path))
-
-                logger.info(f"MiniMax audio saved to {output_path}")
+                logger.info(f"✅ MiniMax audio saved to {output_path} ({len(response.content)} bytes)")
                 return output_path
             else:
-                raise Exception("MiniMax voice cloning returned no output")
+                raise Exception("MiniMax speech generation returned no output")
 
         except Exception as e:
             logger.error(f"Failed to generate MiniMax audio for {speaker}: {e}")
