@@ -22,8 +22,10 @@ import ErrorMessage from './components/ErrorMessage';
 import Toast from './components/Toast';
 import { FollowUpQuestionsModal } from './components/followup/FollowUpQuestionsModal';
 import { CelebritySelector } from './components/celebrity/CelebritySelector';
+import { PasswordGate } from './components/PasswordGate';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [topic, setTopic] = useState('');
   const [renderer, setRenderer] = useState<'manim' | 'remotion'>('manim');
   const [scriptModel, setScriptModel] = useState<'gpt-4o' | 'gpt-4o-mini' | 'gpt-3.5-turbo'>('gpt-4o');
@@ -39,15 +41,21 @@ function App() {
   const [manualJobId, setManualJobId] = useState('');
   const [resumeMode, setResumeMode] = useState(false);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [refinedPrompt, setRefinedPrompt] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [refinedContext, setRefinedContext] = useState<any>(null);
+  const [_refinedPrompt, setRefinedPrompt] = useState<string | null>(null);
+  const [_refinedContext, setRefinedContext] = useState<any>(null);
   const [celebrities, setCelebrities] = useState<CelebrityConfig[]>([
     { mode: 'preset', name: 'drake' },
     { mode: 'preset', name: 'sydney_sweeney' }
   ]);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // Check authentication on mount
+  useEffect(() => {
+    const authenticated = sessionStorage.getItem('authenticated');
+    if (authenticated === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
 
   // Log when audio model changes
   useEffect(() => {
@@ -309,6 +317,11 @@ function App() {
   const handleDismissError = () => {
     setError(null);
   };
+
+  // Show password gate if not authenticated
+  if (!isAuthenticated) {
+    return <PasswordGate onAuthenticated={() => setIsAuthenticated(true)} />;
+  }
 
   return (
     <div className="app">

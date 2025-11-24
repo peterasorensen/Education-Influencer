@@ -13,7 +13,7 @@ interface CustomCelebrityProps {
   onAudioUpload: (audioId: string) => void;
 }
 
-export const CustomCelebrity = ({ photoId, audioId, onPhotoUpload, onAudioUpload }: CustomCelebrityProps) => {
+export const CustomCelebrity = ({ photoId: _photoId, audioId: _audioId, onPhotoUpload, onAudioUpload }: CustomCelebrityProps) => {
   const [audioMode, setAudioMode] = useState<AudioMode>('record');
   const {
     photoState,

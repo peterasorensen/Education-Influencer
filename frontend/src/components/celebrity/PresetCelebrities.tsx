@@ -95,7 +95,7 @@ export const PresetCelebrities = ({ onSelect, selected, nanoBananaPrompt, onProm
                 className="celebrity-image"
                 loading="lazy"
                 crossOrigin="anonymous"
-                onLoad={(e) => {
+                onLoad={() => {
                   console.log('Image loaded successfully:', celebrity.name);
                 }}
                 onError={(e) => {
